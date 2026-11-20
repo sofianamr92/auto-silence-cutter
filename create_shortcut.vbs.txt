@@ -1,0 +1,20 @@
+Dim sh, shortcut
+Set sh = CreateObject("WScript.Shell")
+
+' مسار الاختصار على سطح المكتب
+Dim desktopPath
+desktopPath = sh.SpecialFolders("Desktop") & "\AUTO SILENCE CUTTER.lnk"
+
+' مسار الـ exe الذي تم إنشاؤه
+Dim targetPath
+targetPath = "D:\مونتاج-\dist\AutoSilenceCutter\AutoSilenceCutter.exe"
+
+' مسار الأيقونة
+Dim iconPath
+iconPath = "D:\مونتاج-\assets\icon.ico"
+
+Set shortcut = sh.CreateShortcut(desktopPath)
+shortcut.TargetPath = targetPath
+shortcut.WorkingDirectory = "D:\مونتاج-\dist\AutoSilenceCutter"
+shortcut.IconLocation = iconPath
+shortcut.Save

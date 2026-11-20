@@ -1,0 +1,60 @@
+@echo off
+rem -------------------------------------------------
+rem  تشغيل جميع الخطوات تلقائيًا
+rem -------------------------------------------------
+
+rem ---------- 1. حذف المجلد القديم ----------
+if exist "D:\مونتاج-\dist\AutoSilenceCutter" (
+    rmdir /s /q "D:\مونتاج-\dist\AutoSilenceCutter"
+    echo حذف المجلد القديم.
+) else (
+    echo لا يوجد مجلد قديم لحذفه.
+)
+
+rem ---------- 2. إنشاء الأيقونة ----------
+set "JPEG=D:\مونتاج-\media_1795083616624_e0765c4f.jpg"
+set "ICO=D:\مونتاج-\assets\icon.ico"
+
+rem إنشاء مجلد assets إذا لم يكن موجودًا
+if not exist "D:\مونتاج-\assets" mkdir "D:\مونتاج-\assets"
+
+rem تحويل JPEG إلى ICO (يتطلب ImageMagick)
+magick convert "%JPEG%" -define icon:auto-resize=256,48,32,16 "%ICO%"
+
+if exist "%ICO%" (
+    echo تم إنشاء الأيقونة %ICO%
+) else (
+    echo فشل إنشاء الأيقونة. تأكد من تثبيت ImageMagick وإضافته إلى PATH.
+    exit /b 1
+)
+
+rem ---------- 3. بناء الـ exe ----------
+set "PROJECT=D:\مونتاج-"
+set "ICON=%ICO%"
+set "ENTRY=app\main.py"
+
+cd /d "%PROJECT%"
+
+rem التأكد من وجود PyInstaller (سيُثبَّت إذا لم يكن موجودًا)
+pip show pyinstaller >nul 2>&1
+if errorlevel 1 (
+    echo تثبيت PyInstaller...
+    pip install pyinstaller
+)
+
+rem بناء الملف التنفيذي
+pyinstaller --noconfirm --onedir --windowed ^
+    --icon="%ICON%" ^
+    --name "AutoSilenceCutter" ^
+    "%ENTRY%"
+
+if %errorlevel% neq 0 (
+    echo فشل بناء الـ exe. أوقف التنفيذ.
+    exit /b 1
+)
+
+rem ---------- 4. تحديث ذاكرة الأيقونات ----------
+echo إيقاف Explorer لتحديث الأيقونات...
+taskkill /f /im explorer.exe >nul 2>&1
+del /f /q "%localappdata%\IconCache.db" >nul 2>&1
+del /f /q "%localappdata%\Microsoft\Windows\Explorer\icon*.db
