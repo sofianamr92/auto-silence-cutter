@@ -1,94 +1,20 @@
 # -*- coding: utf-8 -*-
-from dataclasses import dataclass, field
-import uuid
 import os
 import shutil
 import subprocess
-from typing import List, Optional, Sequence, Tuple
+from typing import Optional, Sequence, Tuple
 
-@dataclass
-class MediaInfo:
-    filepath: str = ""
-    duration: float = 0.0
-    width: int = 1920
-    height: int = 1080
-    fps: float = 30.0
-    video_codec: str = ""
-    audio_codec: str = ""
-    audio_sample_rate: int = 44100
-    audio_channels: int = 2
-    bitrate: int = 0
-    file_size_bytes: int = 0
-
-@dataclass
-class DetectedRegion:
-    id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
-    region_type: str = "silence"  # 'silence', 'breath', 'mouth_sound', 'speech'
-    start_time: float = 0.0
-    end_time: float = 0.0
-    confidence: float = 1.0
-    approved_for_cut: bool = True
-    reason: str = ""
-
-    @property
-    def duration(self) -> float:
-        return max(0.0, self.end_time - self.start_time)
-
-@dataclass
-class Clip:
-    id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
-    source_path: str = ""
-    source_in: float = 0.0
-    source_out: float = 0.0
-    timeline_in: float = 0.0
-    is_cut: bool = False
-
-    @property
-    def duration(self) -> float:
-        return max(0.0, self.source_out - self.source_in)
-
-class ProjectState:
-    """الحالة الموحدة والمطلقة للمشروع (Single Source of Truth)"""
-    def __init__(self):
-        self.project_id: str = str(uuid.uuid4())
-        self.project_name: str = "مشروع جديد"
-        self.media_info: MediaInfo = MediaInfo()
-        self.clips: List[Clip] = []
-        self.detected_regions: List[DetectedRegion] = []
-        self.current_playhead: float = 0.0
-        self.is_modified: bool = False
-        self.zoom_level: float = 1.0
-        self.active_layout: str = "Standard Horizontal"
-
-    def reset(self):
-        self.project_id = str(uuid.uuid4())
-        self.project_name = "مشروع جديد"
-        self.media_info = MediaInfo()
-        self.clips.clear()
-        self.detected_regions.clear()
-        self.current_playhead = 0.0
-        self.is_modified = False
-
-    def recalculate_timeline_positions(self):
-        pos = 0.0
-        for clip in self.clips:
-            if not clip.is_cut:
-                clip.timeline_in = pos
-                pos += clip.duration
-
-    @property
-    def total_edited_duration(self) -> float:
-        return sum(c.duration for c in self.clips if not c.is_cut)
-
-    @property
-    def total_removed_duration(self) -> float:
-        return max(0.0, self.media_info.duration - self.total_edited_duration)
-
-    def find_clip_at_time(self, t: float) -> Optional[Clip]:
-        for clip in self.clips:
-            if not clip.is_cut and clip.timeline_in <= t <= (clip.timeline_in + clip.duration):
-                return clip
-        return None
+from timeline.document import (
+    Clip,
+    ClipModel,
+    DetectedRegion,
+    MediaInfo,
+    MediaSource,
+    ProjectState,
+    TimelineDocument,
+    TrackModel,
+    seconds_to_us,
+)
 
 
 class FFmpegRenderer:
@@ -132,6 +58,7 @@ class FFmpegRenderer:
         output_path: str,
         resolution: str = "الدقة الأصلية الكاملة",
         fast_copy: bool = True,
+        include_audio: Optional[bool] = None,
     ) -> Tuple[bool, str]:
         source_path = os.path.abspath(source_path)
         if not os.path.isfile(source_path):
@@ -170,9 +97,11 @@ class FFmpegRenderer:
             if is_full_source_copy:
                 cmd = [
                     ffmpeg_bin, "-y", "-i", source_path,
-                    "-map", "0:v:0", "-map", "0:a?",
+                    "-map", "0:v:0",
                     "-c", "copy",
                 ]
+                if include_audio is not False:
+                    cmd.extend(["-map", "0:a?"])
                 if output_extension in (".mp4", ".mov"):
                     cmd.extend(["-movflags", "+faststart"])
                 cmd.append(temp_output)
@@ -185,7 +114,10 @@ class FFmpegRenderer:
                 }.get(resolution)
                 video_filters = []
                 audio_filters = []
-                has_audio = FFmpegRenderer.has_audio_stream(source_path)
+                has_audio = (
+                    include_audio is not False
+                    and FFmpegRenderer.has_audio_stream(source_path)
+                )
                 for index, (start, end) in enumerate(valid_segments):
                     video_filter = (
                         f"[0:v]trim=start={start:.6f}:end={end:.6f},"

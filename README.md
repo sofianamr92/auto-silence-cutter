@@ -9,3 +9,14 @@ for setup and feature details.
 - FFmpeg and FFprobe installed and available on `PATH` (`ffmpeg -version`,
   `ffprobe -version`)
 - Development/build dependencies: `python -m pip install -r requirements-dev.txt`
+
+## Run the desktop editor
+
+On Windows, install FFmpeg and FFprobe on `PATH`, then run:
+
+```powershell
+python -m app.main
+```
+
+The PySide6 editor saves projects as `.asctimeline`. See [README_AR.md](README_AR.md)
+for the editor and browser-app setup details.

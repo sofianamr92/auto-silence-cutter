@@ -37,8 +37,20 @@ class SilenceDetector:
     def analyze(self, filepath: str) -> List[DetectedRegion]:
         sample_rate = 16000
         audio, total_duration = self.extract_pcm_float(filepath, sample_rate)
+        return self.analyze_audio(audio, sample_rate, total_duration)
+
+    def analyze_audio(
+        self,
+        audio: np.ndarray,
+        sample_rate: int = 16000,
+        total_duration: float = 0.0,
+    ) -> List[DetectedRegion]:
         if len(audio) == 0:
             return []
+        if sample_rate <= 0:
+            raise ValueError("Audio sample rate must be positive.")
+        if total_duration <= 0:
+            total_duration = len(audio) / sample_rate
 
         window_size = int(sample_rate * 0.025)
         hop_size = int(sample_rate * 0.010)
@@ -60,7 +72,7 @@ class SilenceDetector:
         start_time = 0.0
 
         for i, silence in enumerate(is_silence):
-            t = i * 0.010
+            t = i * hop_size / sample_rate
             if silence and not in_silence:
                 in_silence = True
                 start_time = t

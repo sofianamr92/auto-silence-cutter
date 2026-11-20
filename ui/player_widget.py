@@ -22,6 +22,9 @@ class PlayerWidget(QWidget):
         self.player.setVideoOutput(self.video_widget)
 
         self._build_ui()
+        self._fps_num = 30
+        self._fps_den = 1
+        self._variable_frame_rate = False
         self.player.positionChanged.connect(self._on_position_changed)
         self.player.playbackStateChanged.connect(self._on_playback_state_changed)
 
@@ -91,6 +94,17 @@ class PlayerWidget(QWidget):
         self.lbl_timecode.setText("00:00:00:00 / 00:00:00:00")
         self.btn_play.setText("تشغيل")
 
+    def set_timebase(self, fps_num: int, fps_den: int = 1, frame_index_mapper=None):
+        if fps_num <= 0 or fps_den <= 0:
+            raise ValueError("Frame rate must be a positive rational value.")
+        self._fps_num = fps_num
+        self._fps_den = fps_den
+        self._variable_frame_rate = bool(
+            frame_index_mapper is not None
+            and frame_index_mapper.is_variable_frame_rate
+        )
+        self._on_position_changed(self.player.position())
+
     def toggle_play(self):
         if self.player.playbackState() == QMediaPlayer.PlayingState:
             self.player.pause()
@@ -111,10 +125,19 @@ class PlayerWidget(QWidget):
         else:
             self.btn_play.setText("تشغيل")
 
-    @staticmethod
-    def _format_timecode(milliseconds: int) -> str:
-        total_seconds = max(0, int(milliseconds / 1000))
+    def _format_timecode(self, milliseconds: int) -> str:
+        milliseconds = max(0, int(milliseconds))
+        total_seconds = milliseconds // 1000
         hours, remainder = divmod(total_seconds, 3600)
         minutes, seconds = divmod(remainder, 60)
-        frames = max(0, int((milliseconds % 1000) / 1000 * 30))
+        if self._variable_frame_rate:
+            return f"{hours:02d}:{minutes:02d}:{seconds:02d}.{milliseconds % 1000:03d}"
+        frame_rate = max(1, int(round(self._fps_num / self._fps_den)))
+        frame_number = (
+            milliseconds * self._fps_num + 500 * self._fps_den
+        ) // (1000 * self._fps_den)
+        frames_per_hour = frame_rate * 3600
+        hours, frame_remainder = divmod(frame_number, frames_per_hour)
+        minutes, frame_remainder = divmod(frame_remainder, frame_rate * 60)
+        seconds, frames = divmod(frame_remainder, frame_rate)
         return f"{hours:02d}:{minutes:02d}:{seconds:02d}:{frames:02d}"

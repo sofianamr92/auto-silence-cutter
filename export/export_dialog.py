@@ -9,6 +9,64 @@ from core.timecode import format_timecode
 from export.capcut_package import CapCutPackageExporter
 import os
 import json
+from dataclasses import dataclass
+from typing import Tuple
+
+
+@dataclass(frozen=True)
+class TimelineExportSnapshot:
+    source_path: str
+    segments_us: Tuple[Tuple[int, int], ...]
+    fps: float
+    include_audio: bool
+
+    @property
+    def segments_seconds(self):
+        return tuple(
+            (start_us / 1_000_000, end_us / 1_000_000)
+            for start_us, end_us in self.segments_us
+        )
+
+
+class TimelineExportAdapter:
+    @staticmethod
+    def snapshot(document: ProjectState) -> TimelineExportSnapshot:
+        document.validate()
+        if not document.media_info.filepath:
+            raise ValueError("لا يوجد ملف وسائط مرتبط بالمشروع.")
+        tracks = {track.track_id: track for track in document.tracks}
+        video_track = tracks.get("video")
+        audio_track = tracks.get("audio")
+        if video_track is None or not video_track.enabled:
+            raise ValueError("يجب تفعيل مسار الفيديو للتصدير.")
+        clips = sorted(
+            (
+                clip for clip in document.clips
+                if (
+                    not clip.is_cut
+                    and clip.track_id == video_track.track_id
+                    and clip.video_enabled
+                    and clip.duration_us > 0
+                )
+            ),
+            key=lambda clip: clip.timeline_start_us,
+        )
+        if not clips:
+            raise ValueError("لا توجد مقاطع متبقية للتصدير بعد حذف الصمت.")
+        if any(clip.source_path != document.media_info.filepath for clip in clips):
+            raise ValueError("المحرك الحالي يدعم التصدير من مصدر فيديو واحد فقط.")
+        audio_states = {clip.audio_enabled for clip in clips}
+        if len(audio_states) > 1:
+            raise ValueError("تعطيل الصوت لكل مقطع على حدة غير مدعوم في محرك التصدير الحالي.")
+        return TimelineExportSnapshot(
+            source_path=document.media_info.filepath,
+            segments_us=tuple(
+                (clip.source_in_us, clip.source_out_us)
+                for clip in clips
+            ),
+            fps=document.media_info.fps,
+            include_audio=bool(audio_track and audio_track.enabled and audio_states == {True}),
+        )
 
 class ExportWorker(QThread):
     progress = Signal(float)
@@ -22,7 +80,8 @@ class ExportWorker(QThread):
         export_type: str = "video",
     ):
         super().__init__()
-        self.state = state
+        self.state = ProjectState.from_dict(state.to_dict())
+        self.snapshot = TimelineExportAdapter.snapshot(self.state)
         self.out_path = out_path
         self.resolution = resolution
         self.export_type = export_type
@@ -36,17 +95,13 @@ class ExportWorker(QThread):
                 self.finished.emit(success, message)
                 return
 
-            clips = [clip for clip in self.state.clips if not clip.is_cut and clip.duration > 0]
-            if not clips:
-                self.finished.emit(False, "لا توجد مقاطع متبقية للتصدير بعد حذف الصمت.")
-                return
-            segments = [(clip.source_in, clip.source_out) for clip in clips]
             success, message = FFmpegRenderer.render_segments(
-                self.state.media_info.filepath,
-                segments,
+                self.snapshot.source_path,
+                self.snapshot.segments_seconds,
                 self.out_path,
                 resolution=self.resolution,
                 fast_copy=(self.resolution == "الدقة الأصلية الكاملة"),
+                include_audio=self.snapshot.include_audio,
             )
             self.finished.emit(success, message)
         except Exception as exc:
@@ -137,22 +192,35 @@ class ExportDialog(QDialog):
         self.start_export_worker(out_path, "video")
 
     def start_export_worker(self, out_path: str, export_type: str):
+        try:
+            worker = ExportWorker(
+                self.state,
+                out_path,
+                self.combo_res.currentText(),
+                export_type,
+            )
+        except (ValueError, TypeError) as exc:
+            QMessageBox.warning(self, "تعذر بدء التصدير", str(exc))
+            return
         self.progress_bar.setVisible(True)
         self.progress_bar.setRange(0, 0)
         self.btn_start.setEnabled(False)
         self.btn_capcut.setEnabled(False)
-        self.worker = ExportWorker(
-            self.state,
-            out_path,
-            self.combo_res.currentText(),
-            export_type,
-        )
+        self.worker = worker
         self.worker.finished.connect(self.on_export_finished)
         self.worker.start()
 
     def export_cuts(self, out_path: str):
-        clips = [clip for clip in self.state.clips if not clip.is_cut]
-        base, ext = os.path.splitext(out_path)
+        try:
+            snapshot = TimelineExportAdapter.snapshot(self.state)
+        except (ValueError, TypeError) as exc:
+            QMessageBox.warning(self, "تعذر تصدير بيانات القص", str(exc))
+            return
+        clips = sorted(
+            (clip for clip in self.state.clips if not clip.is_cut and clip.video_enabled),
+            key=lambda clip: clip.timeline_start_us,
+        )
+        base, _ext = os.path.splitext(out_path)
         json_path = base + ".json"
         edl_path = base + ".edl"
         cuts = [
@@ -169,7 +237,7 @@ class ExportDialog(QDialog):
             with open(json_path, "w", encoding="utf-8") as handle:
                 json.dump({
                     "source": self.state.media_info.filepath,
-                    "fps": self.state.media_info.fps,
+                    "fps": snapshot.fps,
                     "cuts": cuts,
                 }, handle, ensure_ascii=False, indent=2)
             with open(edl_path, "w", encoding="utf-8") as handle:
