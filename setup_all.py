@@ -23,14 +23,20 @@ FILES = {}
 # ---------------------------------------------------------------------------
 FILES["requirements.txt"] = """PySide6>=6.5.0
 numpy>=1.24.0
-pytest>=7.3.0
-pyinstaller>=5.10.0
 python-dotenv>=1.0.0
 keyring>=25.0.0
 """
 
 # ---------------------------------------------------------------------------
-# 2. .env.example
+# 2. requirements-dev.txt
+# ---------------------------------------------------------------------------
+FILES["requirements-dev.txt"] = """-r requirements.txt
+pytest>=7.3.0
+pyinstaller>=5.10.0
+"""
+
+# ---------------------------------------------------------------------------
+# 3. .env.example
 # ---------------------------------------------------------------------------
 FILES[".env.example"] = """# إعدادات Supabase للعميل العام فقط.
 # لا تضف Google Client Secret أو Service Role Key إلى هذا الملف.
@@ -39,7 +45,7 @@ SUPABASE_PUBLISHABLE_KEY=sb_publishable_your-public-key
 """
 
 # ---------------------------------------------------------------------------
-# 3. app/configuration.py
+# 4. app/configuration.py
 # ---------------------------------------------------------------------------
 FILES["app/configuration.py"] = """# -*- coding: utf-8 -*-
 import os
@@ -1277,7 +1283,10 @@ FILES["README_AR.md"] = """# Auto Silence Cutter
 4. استخدم عنوان callback الذي يعرضه مزود Google في لوحة Supabase كـ Authorized redirect URI في Google Cloud.
 5. انسخ `.env.example` إلى `.env` وأضف عنوان المشروع ومفتاح Publishable/Anon العام فقط.
    لا تضف Google Client Secret أو Service Role Key إلى التطبيق أو Git.
-6. شغّل `python -X utf8 desktop_app.py` وافتح `http://127.0.0.1:8990/`.
+6. ثبّت FFmpeg وFFprobe واجعل الأمرين `ffmpeg` و`ffprobe` متاحين من `PATH`.
+   تحقق عبر `ffmpeg -version` و`ffprobe -version`.
+7. ثبّت متطلبات التشغيل بـ `python -m pip install -r requirements.txt`،
+   ثم شغّل `python -X utf8 desktop_app.py` وافتح `http://127.0.0.1:8990/`.
 
 تُخزَّن جلسة التجديد في Windows Credential Manager. إذا لم تُضف إعدادات Supabase،
 يظل التحرير والحفظ المحلي متاحين.
@@ -1291,6 +1300,7 @@ FILES["README_AR.md"] = """# Auto Silence Cutter
 - بعد الرفع، يتحقق التطبيق من الملف بمقارنة SHA-256. ملفات Storage خاصة وتخضع لسياسات RLS.
 - سعة الملفات وحدودها تعتمد على خطة Supabase.
 
+متطلبات الاختبار والبناء: `python -m pip install -r requirements-dev.txt`.
 اختبارات الوحدات: `python -m pytest tests\\test_cloud_auth.py tests\\test_cloud_projects.py tests\\test_cloud_media.py -q`.
 """
 

@@ -68,7 +68,7 @@ class SupabaseMedia:
             "PATCH",
             f"{self.config.url}/rest/v1/projects?{query}",
             headers=self._headers("return=representation"),
-            body={"media_status": status},
+            body=fields,
         )
 
     @staticmethod
@@ -322,16 +322,18 @@ class SupabaseMedia:
             state["progress"] = 100
             state["message"] = "تم رفع الفيديو والتحقق من checksum."
         except Exception as exc:
-            state["status"] = "error"
-            state["message"] = str(exc)
-            try:
-                self._update_asset(
-                    state["asset_id"],
-                    state["user_id"],
-                    {"upload_status": "failed"},
-                )
-            except CloudRequestError:
-                pass
+            with self._lock:
+                cancelled = state["cancel_event"].is_set()
+                state["status"] = "cancelled" if cancelled else "error"
+                state["message"] = "تم إلغاء الرفع." if cancelled else str(exc)
+                try:
+                    self._update_asset(
+                        state["asset_id"],
+                        state["user_id"],
+                        {"upload_status": "cancelled" if cancelled else "failed"},
+                    )
+                except CloudRequestError:
+                    pass
 
     def status(self, upload_id, user_id):
         with self._lock:
@@ -367,6 +369,14 @@ class SupabaseMedia:
             elif action == "cancel":
                 state["cancel_event"].set()
                 state["pause_event"].clear()
+                if state["status"] == "error":
+                    self._update_asset(
+                        state["asset_id"],
+                        state["user_id"],
+                        {"upload_status": "cancelled"},
+                    )
+                    state["status"] = "cancelled"
+                    state["message"] = "تم إلغاء الرفع."
             else:
                 raise ValueError("أمر الرفع غير صالح.")
             return self.status(upload_id, user_id)

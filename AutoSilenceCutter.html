@@ -2748,6 +2748,12 @@
           cut: segment.cut === true
         };
       });
+      const chronologicalSegments = [...segments].sort((a, b) => a.start - b.start);
+      for (let index = 1; index < chronologicalSegments.length; index += 1) {
+        if (chronologicalSegments[index].start < chronologicalSegments[index - 1].end) {
+          throw new Error('يحتوي ملف المشروع على مقاطع زمنية متداخلة.');
+        }
+      }
       const audioPeaks = state.audio_peaks === undefined ? [] : state.audio_peaks;
       if (
         !Array.isArray(audioPeaks) || audioPeaks.length > 1200 ||

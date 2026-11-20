@@ -22,8 +22,10 @@
    ```
 
    يقبل التطبيق أيضاً مفتاح `anon` القديم عند الحاجة. لا تضف أي مفتاح سري إلى `.env`.
-6. ثبّت المتطلبات وشغّل `python -X utf8 desktop_app.py`. افتح التطبيق على
-   `http://127.0.0.1:8990/`.
+6. ثبّت FFmpeg وFFprobe واجعل الأمرين `ffmpeg` و`ffprobe` متاحين من `PATH`.
+   تحقق عبر `ffmpeg -version` و`ffprobe -version`.
+7. ثبّت متطلبات التشغيل بـ `python -m pip install -r requirements.txt`،
+   ثم شغّل `python -X utf8 desktop_app.py` وافتح `http://127.0.0.1:8990/`.
 
 تُخزَّن جلسة التجديد في Windows Credential Manager، وتُرسل عمليات المشاريع برمز المستخدم
 حتى تطبق PostgreSQL وStorage سياسات RLS. إذا لم تُضف إعدادات Supabase، يظل التحرير والحفظ
@@ -53,6 +55,7 @@
 ## اختبار الميزات المحلية
 
 ```powershell
+python -m pip install -r requirements-dev.txt
 python -m pytest tests\test_cloud_auth.py tests\test_cloud_projects.py tests\test_cloud_media.py -q
 ```
 

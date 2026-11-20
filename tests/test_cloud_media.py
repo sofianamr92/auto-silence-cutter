@@ -26,6 +26,58 @@ def test_storage_requests_use_supabase_direct_storage_hostname():
     assert service._storage_url() == "https://example.storage.supabase.co"
 
 
+def test_project_media_status_update_includes_media_size():
+    service = media_service()
+
+    with patch(
+        "cloud.media.request_json",
+        return_value=[{"version": 4}],
+    ) as request:
+        result = service._update_project_media_status(
+            "project-uuid",
+            "owner-uuid",
+            "cloud",
+            1234,
+        )
+
+    assert request.call_args.kwargs["body"] == {
+        "media_status": "cloud",
+        "media_size_bytes": 1234,
+    }
+    assert result == [{"version": 4}]
+
+
+def test_cancel_after_upload_error_marks_upload_cancelled():
+    service = media_service()
+    state = {
+        "upload_id": "asset-uuid",
+        "asset_id": "asset-uuid",
+        "project_id": "project-uuid",
+        "user_id": "owner-uuid",
+        "previous_media_status": "local_only",
+        "total_bytes": 10,
+        "uploaded_bytes": 5,
+        "progress": 50,
+        "status": "error",
+        "message": "network error",
+        "pause_event": threading.Event(),
+        "cancel_event": threading.Event(),
+        "thread": None,
+    }
+    service._uploads[state["upload_id"]] = state
+
+    with patch.object(service, "_update_asset") as update_asset:
+        result = service.control("asset-uuid", "owner-uuid", "cancel")
+
+    assert result["status"] == "cancelled"
+    assert state["cancel_event"].is_set()
+    update_asset.assert_called_once_with(
+        "asset-uuid",
+        "owner-uuid",
+        {"upload_status": "cancelled"},
+    )
+
+
 def test_start_upload_creates_owner_scoped_asset_and_resumable_state(tmp_path):
     source = tmp_path / "source.mp4"
     source.write_bytes(b"sample video")

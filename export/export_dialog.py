@@ -5,6 +5,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QThread, Signal
 from core.editing_engine import ProjectState, FFmpegRenderer
+from core.timecode import format_timecode
 from export.capcut_package import CapCutPackageExporter
 import os
 import json
@@ -189,14 +190,8 @@ class ExportDialog(QDialog):
         except Exception as exc:
             QMessageBox.critical(self, "خطأ", f"تعذر كتابة بيانات التقطيع:\n{exc}")
 
-    @staticmethod
-    def _timecode(seconds: float) -> str:
-        total = max(0.0, seconds)
-        h = int(total // 3600)
-        m = int((total % 3600) // 60)
-        s = int(total % 60)
-        f = int(round((total - int(total)) * 30)) % 30
-        return f"{h:02d}:{m:02d}:{s:02d}:{f:02d}"
+    def _timecode(self, seconds: float) -> str:
+        return format_timecode(seconds, self.state.media_info.fps)
 
     def on_export_finished(self, success: bool, msg: str):
         self.progress_bar.setVisible(False)

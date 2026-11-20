@@ -12,8 +12,8 @@ import webbrowser
 import tkinter as tk
 from tkinter import filedialog
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+import queue
 import threading
-import time
 import tempfile
 import logging
 import math
@@ -21,6 +21,9 @@ import shutil
 import html
 import uuid
 from core.editing_engine import FFmpegRenderer
+from core.media_http import parse_byte_range, video_content_type
+from core.media_probe import MediaProbe
+from core.timecode import format_timecode
 
 from cloud.auth import CloudAuthError, SupabaseAuth
 from cloud.config import CloudConfig, CloudConfigurationError
@@ -31,9 +34,36 @@ from cloud.projects import ProjectConflict, SupabaseProjects
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PORT = 8990
 
+# ملفات الواجهة المسموح بتقديمها فقط (أي حاجة تانية = 404)
+STATIC_EXTENSIONS = {
+    ".html", ".js", ".mjs", ".css", ".json", ".map", ".wasm",
+    ".png", ".jpg", ".jpeg", ".webp", ".svg", ".ico",
+    ".woff", ".woff2", ".ttf", ".mp3", ".wav",
+}
+# فولدرات ما تتقدمش للمتصفح أبداً
+BLOCKED_DIRS = {
+    "cloud", "core", "tests", "supabase", "database",
+    "scripts", "projects", "workspace", "shortcuts",
+}
+
 root = tk.Tk()
 root.withdraw()
 root.attributes('-topmost', True)
+
+# نوافذ tkinter لازم تتفتح من نفس الـ thread اللي اتعمل فيه root (الـ main thread).
+# handlers السيرفر بتبعت الطلب هنا وتستنى النتيجة.
+DIALOG_QUEUE = queue.Queue()
+
+
+def run_dialog_on_main(func, *args, **kwargs):
+    done = threading.Event()
+    box = {}
+    DIALOG_QUEUE.put((func, args, kwargs, box, done))
+    if not done.wait(timeout=600):
+        raise TimeoutError("انتهت مهلة نافذة الاختيار.")
+    if "error" in box:
+        raise box["error"]
+    return box.get("result")
 
 CURRENT_ACTIVE_VIDEO = None
 UPLOADED_SOURCE_PATH = None
@@ -58,6 +88,7 @@ EXPORT_STATE = {
     "message": "",
     "output_path": ""
 }
+SOURCE_EXPORT_LOCK = threading.RLock()
 
 
 def remove_uploaded_source(path):
@@ -87,13 +118,30 @@ def validate_export_segments(segments):
 class CustomHandler(SimpleHTTPRequestHandler):
     
     def translate_path(self, path):
-        clean_path = path.split('?')[0].split('#')[0]
-        if clean_path in ('/', ''):
+        clean_path = urllib.parse.unquote(path.split('?')[0].split('#')[0])
+        parts = [p for p in clean_path.replace('\\', '/').split('/') if p]
+        if not parts:
             return os.path.join(BASE_DIR, 'AutoSilenceCutter.html')
-        return os.path.join(BASE_DIR, clean_path.lstrip('/'))
+        blocked = os.path.join(BASE_DIR, '__blocked__')
+        try:
+            base = os.path.realpath(BASE_DIR)
+            full = os.path.realpath(os.path.join(BASE_DIR, *parts))
+            inside = os.path.commonpath([base, full]) == base
+        except ValueError:
+            return blocked
+        if (
+            not inside
+            or any(p.startswith('.') for p in parts)
+            or parts[0].lower() in BLOCKED_DIRS
+            or os.path.splitext(full)[1].lower() not in STATIC_EXTENSIONS
+        ):
+            return blocked
+        return full
 
     def do_GET(self):
         request = urllib.parse.urlparse(self.path)
+        if request.path.startswith('/api/') and not self._check_local_origin():
+            return
         if request.path == '/auth/callback':
             self._handle_google_callback(request)
             return
@@ -210,25 +258,25 @@ class CustomHandler(SimpleHTTPRequestHandler):
 
         # 1. الاستعلام عن نسبة تقدم التصدير
         if request.path == '/api/export_progress':
-            self._send_json(EXPORT_STATE)
+            with SOURCE_EXPORT_LOCK:
+                state = dict(EXPORT_STATE)
+            self._send_json(state)
             return
 
         # 2. مشغل بث الفيديو
         if request.path == '/api/stream_video':
-            params = urllib.parse.parse_qs(request.query)
-            video_path = params.get('path', [None])[0]
-            if video_path and os.path.exists(video_path):
-                self.send_response(200)
-                self.send_header('Content-Type', 'video/mp4')
-                self.send_header('Content-Length', str(os.path.getsize(video_path)))
-                self.end_headers()
-                with open(video_path, 'rb') as f:
-                    while chunk := f.read(64 * 1024):
-                        self.wfile.write(chunk)
-                return
-            else:
+            requested = urllib.parse.parse_qs(request.query).get('path', [None])[0]
+            if (
+                not requested
+                or not CURRENT_ACTIVE_VIDEO
+                or not os.path.isfile(CURRENT_ACTIVE_VIDEO)
+                or os.path.normcase(os.path.abspath(requested))
+                != os.path.normcase(CURRENT_ACTIVE_VIDEO)
+            ):
                 self.send_error(404, "الفيديو غير موجود")
                 return
+            self._stream_file(CURRENT_ACTIVE_VIDEO)
+            return
 
         super().do_GET()
 
@@ -316,9 +364,10 @@ class CustomHandler(SimpleHTTPRequestHandler):
 
     def _handle_source_upload(self, content_length):
         global CURRENT_ACTIVE_VIDEO, UPLOADED_SOURCE_PATH, EXPORT_STATE
-        if EXPORT_STATE["status"] == "exporting":
-            self._send_json({"success": False, "error": "انتظر انتهاء التصدير قبل تحميل مصدر آخر."}, status=409)
-            return
+        with SOURCE_EXPORT_LOCK:
+            if EXPORT_STATE["status"] == "exporting":
+                self._send_json({"success": False, "error": "انتظر انتهاء التصدير قبل تحميل مصدر آخر."}, status=409)
+                return
         if content_length <= 0:
             self._send_json({"success": False, "error": "ملف المصدر فارغ."}, status=400)
             return
@@ -343,17 +392,23 @@ class CustomHandler(SimpleHTTPRequestHandler):
             if os.path.getsize(temp_path) == 0:
                 raise ValueError("ملف المصدر فارغ.")
 
-            previous_upload = UPLOADED_SOURCE_PATH
-            CURRENT_ACTIVE_VIDEO = os.path.abspath(temp_path)
-            UPLOADED_SOURCE_PATH = CURRENT_ACTIVE_VIDEO
-            EXPORT_STATE = {
-                "status": "idle",
-                "progress": 0,
-                "message": "",
-                "output_path": ""
-            }
-            temp_path = None
-            remove_uploaded_source(previous_upload)
+            with SOURCE_EXPORT_LOCK:
+                if EXPORT_STATE["status"] == "exporting":
+                    remove_uploaded_source(temp_path)
+                    temp_path = None
+                    self._send_json({"success": False, "error": "انتظر انتهاء التصدير قبل تحميل مصدر آخر."}, status=409)
+                    return
+                previous_upload = UPLOADED_SOURCE_PATH
+                CURRENT_ACTIVE_VIDEO = os.path.abspath(temp_path)
+                UPLOADED_SOURCE_PATH = CURRENT_ACTIVE_VIDEO
+                EXPORT_STATE = {
+                    "status": "idle",
+                    "progress": 0,
+                    "message": "",
+                    "output_path": ""
+                }
+                temp_path = None
+                remove_uploaded_source(previous_upload)
             self._send_json({
                 "success": True,
                 "path": CURRENT_ACTIVE_VIDEO,
@@ -368,6 +423,8 @@ class CustomHandler(SimpleHTTPRequestHandler):
         global CURRENT_ACTIVE_VIDEO, UPLOADED_SOURCE_PATH, EXPORT_STATE
         content_length = int(self.headers.get('Content-Length', 0))
         path = urllib.parse.urlparse(self.path).path
+        if path.startswith('/api/') and not self._check_local_origin():
+            return
         if path == '/api/upload_source':
             self._handle_source_upload(content_length)
             return
@@ -414,29 +471,33 @@ class CustomHandler(SimpleHTTPRequestHandler):
             return
 
         if path == '/api/activate_source':
-            if EXPORT_STATE["status"] == "exporting":
-                self._send_json({"success": False, "error": "انتظر انتهاء التصدير قبل تغيير مصدر الفيديو."}, status=409)
-                return
             source_path = data.get('path')
             if not isinstance(source_path, str) or not os.path.isfile(source_path):
                 self._send_json({"success": False, "error": "ملف الفيديو غير موجود."}, status=404)
                 return
             source_path = os.path.abspath(source_path)
-            if UPLOADED_SOURCE_PATH and UPLOADED_SOURCE_PATH != source_path:
-                remove_uploaded_source(UPLOADED_SOURCE_PATH)
-                UPLOADED_SOURCE_PATH = None
-            CURRENT_ACTIVE_VIDEO = source_path
-            EXPORT_STATE = {
-                "status": "idle",
-                "progress": 0,
-                "message": "",
-                "output_path": ""
-            }
-            self._send_json({
-                "success": True,
-                "path": source_path,
-                "size_bytes": os.path.getsize(source_path),
-            })
+            with SOURCE_EXPORT_LOCK:
+                if EXPORT_STATE["status"] == "exporting":
+                    self._send_json({"success": False, "error": "انتظر انتهاء التصدير قبل تغيير مصدر الفيديو."}, status=409)
+                    return
+                if not os.path.isfile(source_path):
+                    self._send_json({"success": False, "error": "ملف الفيديو غير موجود."}, status=404)
+                    return
+                if UPLOADED_SOURCE_PATH and UPLOADED_SOURCE_PATH != source_path:
+                    remove_uploaded_source(UPLOADED_SOURCE_PATH)
+                    UPLOADED_SOURCE_PATH = None
+                CURRENT_ACTIVE_VIDEO = source_path
+                EXPORT_STATE = {
+                    "status": "idle",
+                    "progress": 0,
+                    "message": "",
+                    "output_path": ""
+                }
+                self._send_json({
+                    "success": True,
+                    "path": source_path,
+                    "size_bytes": os.path.getsize(source_path),
+                })
             return
 
         if path == '/api/auth/logout':
@@ -524,54 +585,61 @@ class CustomHandler(SimpleHTTPRequestHandler):
             return
 
         if path == '/api/remove_video':
-            if EXPORT_STATE["status"] == "exporting":
-                self._send_json({"success": False, "error": "انتظر انتهاء التصدير قبل إزالة الفيديو."}, status=409)
-                return
+            with SOURCE_EXPORT_LOCK:
+                if EXPORT_STATE["status"] == "exporting":
+                    self._send_json({"success": False, "error": "انتظر انتهاء التصدير قبل إزالة الفيديو."}, status=409)
+                    return
 
-            uploaded_source = UPLOADED_SOURCE_PATH
-            CURRENT_ACTIVE_VIDEO = None
-            UPLOADED_SOURCE_PATH = None
-            EXPORT_STATE = {
-                "status": "idle",
-                "progress": 0,
-                "message": "",
-                "output_path": ""
-            }
-            remove_uploaded_source(uploaded_source)
-            self._send_json({"success": True})
+                uploaded_source = UPLOADED_SOURCE_PATH
+                CURRENT_ACTIVE_VIDEO = None
+                UPLOADED_SOURCE_PATH = None
+                EXPORT_STATE = {
+                    "status": "idle",
+                    "progress": 0,
+                    "message": "",
+                    "output_path": ""
+                }
+                remove_uploaded_source(uploaded_source)
+                self._send_json({"success": True})
         elif path == '/api/select_video_native':
-            if EXPORT_STATE["status"] == "exporting":
-                self._send_json({"success": False, "error": "انتظر انتهاء التصدير قبل تحميل مصدر آخر."}, status=409)
-                return
-            file_path = filedialog.askopenfilename(
+            with SOURCE_EXPORT_LOCK:
+                if EXPORT_STATE["status"] == "exporting":
+                    self._send_json({"success": False, "error": "انتظر انتهاء التصدير قبل تحميل مصدر آخر."}, status=409)
+                    return
+            file_path = run_dialog_on_main(
+                filedialog.askopenfilename,
                 title="اختر ملف الفيديو لتحليله ومونتاجه",
                 filetypes=[("Video Files", "*.mp4 *.mov *.mkv *.webm *.avi"), ("All Files", "*.*")]
             )
             if file_path:
-                CURRENT_ACTIVE_VIDEO = os.path.abspath(file_path)
-                remove_uploaded_source(UPLOADED_SOURCE_PATH)
-                UPLOADED_SOURCE_PATH = None
-                size_mb = round(os.path.getsize(CURRENT_ACTIVE_VIDEO) / (1024 * 1024), 1)
-                self._send_json({
-                    "success": True,
-                    "path": CURRENT_ACTIVE_VIDEO,
-                    "name": os.path.basename(CURRENT_ACTIVE_VIDEO),
-                    "size_mb": size_mb,
-                    "size_bytes": os.path.getsize(CURRENT_ACTIVE_VIDEO),
-                    "stream_url": f"/api/stream_video?path={urllib.parse.quote(CURRENT_ACTIVE_VIDEO)}"
-                })
+                with SOURCE_EXPORT_LOCK:
+                    if EXPORT_STATE["status"] == "exporting":
+                        self._send_json({"success": False, "error": "انتظر انتهاء التصدير قبل تحميل مصدر آخر."}, status=409)
+                        return
+                    CURRENT_ACTIVE_VIDEO = os.path.abspath(file_path)
+                    remove_uploaded_source(UPLOADED_SOURCE_PATH)
+                    UPLOADED_SOURCE_PATH = None
+                    size_mb = round(os.path.getsize(CURRENT_ACTIVE_VIDEO) / (1024 * 1024), 1)
+                    self._send_json({
+                        "success": True,
+                        "path": CURRENT_ACTIVE_VIDEO,
+                        "name": os.path.basename(CURRENT_ACTIVE_VIDEO),
+                        "size_mb": size_mb,
+                        "size_bytes": os.path.getsize(CURRENT_ACTIVE_VIDEO),
+                        "stream_url": f"/api/stream_video?path={urllib.parse.quote(CURRENT_ACTIVE_VIDEO)}"
+                    })
             else:
                 self._send_json({"success": False})
 
         # اختيار مجلد الحفظ
         elif path == '/api/browse_folder':
-            folder = filedialog.askdirectory(title="اختر مجلد حفظ الفيديو الممنتج")
+            folder = run_dialog_on_main(filedialog.askdirectory, title="اختر مجلد حفظ الفيديو الممنتج")
             self._send_json({"folder": folder if folder else None})
 
         # فتح المجلد
         elif path == '/api/open_folder':
             folder = data.get('folder', '')
-            if os.path.exists(folder):
+            if os.path.isdir(folder):
                 os.startfile(folder)
                 self._send_json({"success": True})
             else:
@@ -589,26 +657,26 @@ class CustomHandler(SimpleHTTPRequestHandler):
                 return
             try:
                 validated_segments = validate_export_segments(data.get('segments'))
+                with SOURCE_EXPORT_LOCK:
+                    source_video = CURRENT_ACTIVE_VIDEO
+                    if not source_video or not os.path.isfile(source_video):
+                        raise ValueError("تعذر العثور على الفيديو الأصلي لقراءة معدل الإطارات.")
+                    media_info = MediaProbe.probe_file(source_video)
+                    if not media_info:
+                        raise ValueError("تعذر قراءة معدل إطارات الفيديو الأصلي.")
                 base_path = os.path.abspath(full_path)
                 if os.path.splitext(base_path)[1].lower() in (".json", ".edl"):
                     base_path = os.path.splitext(base_path)[0]
                 os.makedirs(os.path.dirname(base_path) or ".", exist_ok=True)
                 cuts = {
                     "source_name": data.get("source_name", ""),
+                    "fps": media_info.fps,
                     "cuts": validated_segments,
                 }
                 json_path = base_path + ".json"
                 edl_path = base_path + ".edl"
                 with open(json_path, "w", encoding="utf-8") as output_file:
                     json.dump(cuts, output_file, ensure_ascii=False, indent=2)
-
-                def to_timecode(seconds):
-                    frame_rate = 30
-                    total_frames = int(round(seconds * frame_rate))
-                    hours, remainder = divmod(total_frames, frame_rate * 3600)
-                    minutes, remainder = divmod(remainder, frame_rate * 60)
-                    whole_seconds, frames = divmod(remainder, frame_rate)
-                    return f"{hours:02d}:{minutes:02d}:{whole_seconds:02d}:{frames:02d}"
 
                 with open(edl_path, "w", encoding="utf-8") as output_file:
                     output_file.write("TITLE: AUTO SILENCE CUTTER\nFCM: NON-DROP FRAME\n\n")
@@ -617,8 +685,10 @@ class CustomHandler(SimpleHTTPRequestHandler):
                         duration = segment["end"] - segment["start"]
                         output_file.write(
                             f"{index:03d}  AX       V     C        "
-                            f"{to_timecode(segment['start'])} {to_timecode(segment['end'])} "
-                            f"{to_timecode(timeline_position)} {to_timecode(timeline_position + duration)}\n"
+                            f"{format_timecode(segment['start'], media_info.fps)} "
+                            f"{format_timecode(segment['end'], media_info.fps)} "
+                            f"{format_timecode(timeline_position, media_info.fps)} "
+                            f"{format_timecode(timeline_position + duration, media_info.fps)}\n"
                         )
                         output_file.write(f"* SOURCE: {data.get('source_name', '')}\n\n")
                         timeline_position += duration
@@ -634,15 +704,7 @@ class CustomHandler(SimpleHTTPRequestHandler):
         elif path == '/api/export_video':
             full_path = data.get('full_path', '')
             segments = data.get('segments', [])
-            source_video = CURRENT_ACTIVE_VIDEO
             export_type = data.get('export_type', 'video')
-
-            if EXPORT_STATE["status"] == "exporting":
-                self._send_json({"success": False, "error": "هناك عملية تصدير قيد التشغيل بالفعل."}, status=409)
-                return
-            if not source_video or not os.path.exists(source_video):
-                self._send_json({"success": False, "error": "تعذر العثور على الفيديو الأصلي."}, status=400)
-                return
 
             if not isinstance(full_path, str) or not full_path.strip():
                 self._send_json({"success": False, "error": "مسار الحفظ غير محدد."}, status=400)
@@ -660,34 +722,77 @@ class CustomHandler(SimpleHTTPRequestHandler):
                 package_dir = os.path.abspath(full_path)
                 full_path = os.path.join(package_dir, "rendered_video.mp4")
 
-            # بدء مهمة التصدير في الخلفية حتى لا يقف المتصفح
-            EXPORT_STATE = {
-                "status": "exporting",
-                "progress": 10,
-                "message": "جاري تجهيز مقاطع الكلام والحزمة..." if package_dir else "جاري تجهيز مقاطع الكلام...",
-                "output_path": full_path
-            }
+            with SOURCE_EXPORT_LOCK:
+                if EXPORT_STATE["status"] == "exporting":
+                    self._send_json({"success": False, "error": "هناك عملية تصدير قيد التشغيل بالفعل."}, status=409)
+                    return
+                source_video = CURRENT_ACTIVE_VIDEO
+                if not source_video or not os.path.isfile(source_video):
+                    self._send_json({"success": False, "error": "تعذر العثور على الفيديو الأصلي."}, status=400)
+                    return
 
-            try:
-                threading.Thread(
-                    target=worker_ffmpeg_export,
-                    args=(source_video, validated_segments, full_path, package_dir, data.get("source_name", "")),
-                    daemon=True
-                ).start()
-            except RuntimeError as exc:
                 EXPORT_STATE = {
-                    "status": "error",
-                    "progress": 0,
-                    "message": f"تعذر بدء التصدير: {exc}",
+                    "status": "exporting",
+                    "progress": 10,
+                    "message": "جاري تجهيز مقاطع الكلام والحزمة..." if package_dir else "جاري تجهيز مقاطع الكلام...",
                     "output_path": full_path
                 }
-                self._send_json({"success": False, "error": EXPORT_STATE["message"]}, status=500)
-                return
+
+                try:
+                    threading.Thread(
+                        target=worker_ffmpeg_export,
+                        args=(source_video, validated_segments, full_path, package_dir, data.get("source_name", "")),
+                        daemon=True
+                    ).start()
+                except RuntimeError as exc:
+                    EXPORT_STATE = {
+                        "status": "error",
+                        "progress": 0,
+                        "message": f"تعذر بدء التصدير: {exc}",
+                        "output_path": full_path
+                    }
+                    self._send_json({"success": False, "error": EXPORT_STATE["message"]}, status=500)
+                    return
 
             self._send_json({"success": True, "message": "تم بدء التصدير في الخلفية"}, status=202)
 
         else:
             self.send_error(404, "Endpoint not found")
+
+    def _stream_file(self, file_path):
+        size = os.path.getsize(file_path)
+        content_type = video_content_type(file_path)
+        start, end, status = 0, size - 1, 200
+        range_header = self.headers.get('Range')
+        if range_header:
+            try:
+                start, end = parse_byte_range(range_header, size)
+                status = 206
+            except ValueError:
+                self.send_response(416)
+                self.send_header('Content-Range', f'bytes */{size}')
+                self.end_headers()
+                return
+        length = end - start + 1
+        self.send_response(status)
+        self.send_header('Content-Type', content_type)
+        self.send_header('Accept-Ranges', 'bytes')
+        self.send_header('Content-Length', str(length))
+        if status == 206:
+            self.send_header('Content-Range', f'bytes {start}-{end}/{size}')
+        self.end_headers()
+        try:
+            with open(file_path, 'rb') as f:
+                f.seek(start)
+                remaining = length
+                while remaining > 0:
+                    chunk = f.read(min(64 * 1024, remaining))
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    remaining -= len(chunk)
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            pass
 
     def _send_json(self, data, status=200):
         body = json.dumps(data, ensure_ascii=False).encode('utf-8')
@@ -814,20 +919,22 @@ def worker_ffmpeg_export(input_file, kept_segments, output_file, package_dir=Non
                     "والمقاطع المنفردة داخل clips، والتوقيتات داخل metadata.\n"
                 )
 
-        EXPORT_STATE = {
-            "status": "completed",
-            "progress": 100,
-            "message": "تم تصدير الفيديو بنجاح!",
-            "output_path": output_file
-        }
+        with SOURCE_EXPORT_LOCK:
+            EXPORT_STATE = {
+                "status": "completed",
+                "progress": 100,
+                "message": "تم تصدير الفيديو بنجاح!",
+                "output_path": output_file
+            }
     except Exception as exc:
         logger.exception("Video export failed")
-        EXPORT_STATE = {
-            "status": "error",
-            "progress": 0,
-            "message": str(exc),
-            "output_path": output_file
-        }
+        with SOURCE_EXPORT_LOCK:
+            EXPORT_STATE = {
+                "status": "error",
+                "progress": 0,
+                "message": str(exc),
+                "output_path": output_file
+            }
     finally:
         if temp_dir and os.path.isdir(temp_dir):
             try:
@@ -863,7 +970,21 @@ if __name__ == '__main__':
         webbrowser.open(url)
 
     try:
+        # الـ main thread هو اللي بيخدم نوافذ tkinter ويفضل يحدّث root
         while True:
-            threading.Event().wait(1)
+            try:
+                func, args, kwargs, box, done = DIALOG_QUEUE.get(timeout=0.05)
+            except queue.Empty:
+                try:
+                    root.update()
+                except tk.TclError:
+                    pass
+                continue
+            try:
+                box["result"] = func(*args, **kwargs)
+            except Exception as exc:
+                box["error"] = exc
+            finally:
+                done.set()
     except KeyboardInterrupt:
         sys.exit(0)

@@ -17,13 +17,14 @@ from export.export_dialog import ExportDialog
 import numpy as np
 
 class AnalysisWorker(QThread):
-    finished = Signal(object, object)
-    error = Signal(str)
+    analysis_succeeded = Signal(int, object, object)
+    analysis_failed = Signal(int, str)
 
-    def __init__(self, filepath: str, threshold: float):
+    def __init__(self, filepath: str, threshold: float, request_id: int):
         super().__init__()
         self.filepath = filepath
         self.threshold = threshold
+        self.request_id = request_id
 
     def run(self):
         try:
@@ -32,9 +33,9 @@ class AnalysisWorker(QThread):
             audio, _ = SilenceDetector.extract_pcm_float(self.filepath, 16000)
             breath_engine = BreathDetector()
             breaths = breath_engine.detect_breaths(audio, 16000, regions)
-            self.finished.emit(regions + breaths, audio)
+            self.analysis_succeeded.emit(self.request_id, regions + breaths, audio)
         except Exception as e:
-            self.error.emit(str(e))
+            self.analysis_failed.emit(self.request_id, str(e))
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -45,6 +46,9 @@ class MainWindow(QMainWindow):
 
         self.state = ProjectState()
         self.undo_stack = UndoRedoStack()
+        self._analysis_generation = 0
+        self._analysis_workers = set()
+        self._analysis_worker = None
 
         self._build_ui()
         self._setup_shortcuts()
@@ -122,6 +126,7 @@ class MainWindow(QMainWindow):
                 QMessageBox.critical(self, "خطأ", "تعذر قراءة بيانات الفيديو عبر FFprobe!")
                 return
             self.state.reset()
+            self.undo_stack.clear()
             self.state.media_info = info
             from core.editing_engine import Clip
             self.state.clips = [Clip(
@@ -134,12 +139,32 @@ class MainWindow(QMainWindow):
 
             self.progress_bar.setVisible(True)
             self.progress_bar.setRange(0, 0)
-            self.worker = AnalysisWorker(file, -38.0)
-            self.worker.finished.connect(self.on_analysis_finished)
-            self.worker.error.connect(lambda err: QMessageBox.warning(self, "تنبيه", f"خطأ في التحليل: {err}"))
-            self.worker.start()
+            self._analysis_generation += 1
+            request_id = self._analysis_generation
+            worker = AnalysisWorker(file, -38.0, request_id)
+            self._analysis_workers.add(worker)
+            self._analysis_worker = worker
+            worker.analysis_succeeded.connect(self.on_analysis_finished)
+            worker.analysis_failed.connect(self.on_analysis_error)
+            worker.finished.connect(self._release_analysis_worker)
+            worker.start()
 
-    def on_analysis_finished(self, regions, audio):
+    def _release_analysis_worker(self):
+        worker = self.sender()
+        if worker is not None:
+            self._analysis_workers.discard(worker)
+            if self._analysis_worker is worker:
+                self._analysis_worker = None
+
+    def on_analysis_error(self, request_id, error):
+        if request_id != self._analysis_generation:
+            return
+        self.progress_bar.setVisible(False)
+        QMessageBox.warning(self, "تنبيه", f"خطأ في التحليل: {error}")
+
+    def on_analysis_finished(self, request_id, regions, audio):
+        if request_id != self._analysis_generation:
+            return
         self.progress_bar.setVisible(False)
         self.state.detected_regions = regions
 
@@ -199,6 +224,8 @@ class MainWindow(QMainWindow):
             return
         res = QMessageBox.question(self, "تأكيد", "هل أنت متأكد من رغبتك بإزالة الفيديو الحالي من مساحة العمل؟\n(لن يتم حذف ملفك الأصلي من الحاسوب)")
         if res == QMessageBox.Yes:
+            self._analysis_generation += 1
+            self.progress_bar.setVisible(False)
             self.player_widget.player.stop()
             self.player_widget.player.setSource("")
             self.state.reset()
