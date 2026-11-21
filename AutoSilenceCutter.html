@@ -261,6 +261,11 @@
           <button id="btnAutoCut" class="text-xs font-black bg-gradient-to-r from-pink-600 via-rose-600 to-purple-600 hover:from-pink-500 text-white px-3.5 py-2 rounded-lg flex items-center gap-1.5 shadow-lg shadow-pink-600/30 transition">
             <span>✂</span> قص الصمت تلقائياً
           </button>
+          <select id="detectPresetSelect" class="text-xs bg-[#141d2d] text-gray-300 border border-[#223047] px-2 py-2 rounded-lg" title="نمط القص: يُطبَّق عند الضغط على زرار قص الصمت">
+            <option value="reels">ريلز سريع</option>
+            <option value="standard">قياسي</option>
+            <option value="relaxed">هادئ (شرح/بودكاست)</option>
+          </select>
           
           <button id="btnRestoreAll" class="text-xs bg-[#141d2d] hover:bg-[#1a263b] text-gray-300 border border-[#223047] px-3 py-2 rounded-lg transition" title="استعادة جميع الأجزاء المحذوفة">
             إلغاء القص
@@ -871,6 +876,17 @@
     let duration = 0;
     let currentZoom = 2;
     let audioPeaks = [];
+    // كشف السكتات بدقة عالية (إطار 10ms) منفصل عن نقاط رسم الموجة
+    let silenceEnvelope = null;
+    const DETECTION_PRESETS = {
+      reels:    { thresholdDb: -38, minSilence: 0.30, keepTail: 0.08, keepLead: 0.10, minCut: 0.12 },
+      standard: { thresholdDb: -38, minSilence: 0.45, keepTail: 0.12, keepLead: 0.15, minCut: 0.12 },
+      relaxed:  { thresholdDb: -40, minSilence: 0.80, keepTail: 0.20, keepLead: 0.25, minCut: 0.12 }
+    };
+    let detectionPreset = (function() {
+      const saved = localStorage.getItem('auto_silence_detect_preset');
+      return Object.prototype.hasOwnProperty.call(DETECTION_PRESETS, saved) ? saved : 'standard';
+    })();
     let segments = [];
     let isSmartCutMode = true;
     let originalFileName = "Video.mp4";
@@ -2392,6 +2408,13 @@
           nextAudioPeaks.push(sum / (end - start));
         }
 
+        try {
+          silenceEnvelope = buildSilenceEnvelope(audioBuffer);
+        } catch (envelopeError) {
+          console.error('Silence envelope failed, using legacy detection:', envelopeError);
+          silenceEnvelope = null;
+        }
+
         let uploadWarning = '';
         sourceUploadReady = false;
         activeSourcePath = null;
@@ -2494,7 +2517,98 @@
       }
     });
 
+    // مغلّف الصوت: قيمة dB لكل 10ms (نافذة 20ms)
+    function buildSilenceEnvelope(audioBuffer) {
+      const sampleRate = audioBuffer.sampleRate;
+      const hop = Math.max(1, Math.round(sampleRate * 0.01));
+      const channelCount = Math.min(2, audioBuffer.numberOfChannels);
+      const channels = [];
+      for (let c = 0; c < channelCount; c++) channels.push(audioBuffer.getChannelData(c));
+      const frames = Math.floor(channels[0].length / hop);
+      if (frames < 3) return null;
+
+      const energy = new Float32Array(frames);
+      for (let f = 0; f < frames; f++) {
+        const from = f * hop;
+        let sum = 0;
+        for (let c = 0; c < channelCount; c++) {
+          const data = channels[c];
+          for (let i = from; i < from + hop; i++) sum += data[i] * data[i];
+        }
+        energy[f] = sum / (hop * channelCount);
+      }
+      const db = new Float32Array(frames - 1);
+      for (let f = 0; f < frames - 1; f++) {
+        const rms = Math.sqrt((energy[f] + energy[f + 1]) / 2 + 1e-12);
+        db[f] = 20 * Math.log10(rms + 1e-6);
+      }
+      return { db: db, hop: hop / sampleRate };
+    }
+
     function detectSilences() {
+      segments = [];
+      if (!duration) return;
+      if (!silenceEnvelope) {
+        detectSilencesLegacy();
+        return;
+      }
+      const preset = DETECTION_PRESETS[detectionPreset] || DETECTION_PRESETS.standard;
+      const db = silenceEnvelope.db;
+      const hop = silenceEnvelope.hop;
+      const n = db.length;
+
+      // مستوى الضوضاء = الشريحة 15% الأهدأ، ومش بيعدّي العتبة بأكتر من 6dB
+      // (تحفّظ: قص كلام بالغلط أسوأ من ترك سكتة)
+      const sample = [];
+      for (let i = 0; i < n; i += 5) sample.push(db[i]);
+      sample.sort(function(a, b) { return a - b; });
+      const noiseFloor = sample.length ? sample[Math.floor(sample.length * 0.15)] : -60;
+      const threshold = Math.min(
+        Math.max(preset.thresholdDb, noiseFloor + 7),
+        preset.thresholdDb + 6
+      );
+
+      const regions = [];
+      let runStart = -1;
+      for (let i = 0; i <= n; i++) {
+        const silent = i < n && db[i] < threshold;
+        if (silent && runStart < 0) {
+          runStart = i;
+        } else if (!silent && runStart >= 0) {
+          regions.push([runStart * hop, i >= n ? duration : i * hop]);
+          runStart = -1;
+        }
+      }
+
+      const cutRanges = [];
+      regions.forEach(function(region) {
+        const s = region[0];
+        const e = region[1];
+        if (e - s < preset.minSilence) return;
+        const atStart = s <= 0.001;
+        const atEnd = e >= duration - 0.05;
+        const cutStart = atStart ? 0 : s + preset.keepTail;
+        const cutEnd = atEnd ? duration : e - preset.keepLead;
+        if (cutEnd - cutStart >= preset.minCut) cutRanges.push([cutStart, cutEnd]);
+      });
+
+      let cursor = 0;
+      cutRanges.forEach(function(range) {
+        if (range[0] - cursor > 0.001) {
+          segments.push({ start: cursor, end: range[0], type: 'speech', cut: false });
+        }
+        segments.push({ start: range[0], end: range[1], type: 'silence', cut: true });
+        cursor = range[1];
+      });
+      if (duration - cursor > 0.001) {
+        segments.push({ start: cursor, end: duration, type: 'speech', cut: false });
+      }
+      if (!segments.length) {
+        segments.push({ start: 0, end: duration, type: 'speech', cut: false });
+      }
+    }
+
+    function detectSilencesLegacy() {
       segments = [];
       if (!duration || !audioPeaks.length) return;
       let avgAmp = audioPeaks.reduce((a, b) => a + b, 0) / audioPeaks.length;
@@ -2722,6 +2836,14 @@
     document.getElementById('btnRestoreAll').addEventListener('click', restoreAllSegments);
 
     document.getElementById('btnAutoCut').addEventListener('click', autoCutSilences);
+    const detectPresetSelect = document.getElementById('detectPresetSelect');
+    detectPresetSelect.value = detectionPreset;
+    detectPresetSelect.addEventListener('change', function() {
+      detectionPreset = Object.prototype.hasOwnProperty.call(DETECTION_PRESETS, this.value)
+        ? this.value
+        : 'standard';
+      localStorage.setItem('auto_silence_detect_preset', detectionPreset);
+    });
 
     // 3. ADVANCED KEYBOARD EVENT LISTENER WITH ARABIC NORMALIZER
     window.addEventListener('keydown', function(e) {
