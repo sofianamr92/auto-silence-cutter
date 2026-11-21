@@ -21,7 +21,7 @@ import shutil
 import html
 import uuid
 import time
-from core.editing_engine import FFmpegRenderer
+from core.editing_engine import FFmpegRenderer, merge_contiguous_segments
 from core.media_http import parse_byte_range, video_content_type
 from core.media_probe import MediaProbe
 from core.timecode import format_timecode
@@ -131,7 +131,7 @@ def validate_export_segments(segments):
         if isinstance(clip_id, str):
             item["id"] = clip_id
         validated.append(item)
-    return validated
+    return merge_contiguous_segments(validated)
 
 
 def apply_export_range(segments, settings):
@@ -163,6 +163,13 @@ def _commit_text_files(contents, overwrite):
                 os.link(temp_path, path)
             except FileExistsError as exc:
                 raise FileExistsError(f"يوجد ملف بهذا الاسم بالفعل: {path}") from exc
+            except OSError:
+                # hard links غير مدعومة (exFAT / FAT32 / بعض الأقراص الشبكية)
+                if os.path.exists(path):
+                    raise FileExistsError(f"يوجد ملف بهذا الاسم بالفعل: {path}")
+                os.rename(temp_path, path)
+                created_paths.append(path)
+                continue
             created_paths.append(path)
             os.remove(temp_path)
     except Exception:

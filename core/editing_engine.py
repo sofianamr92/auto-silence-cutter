@@ -2,9 +2,11 @@
 import os
 import json
 import math
+import functools
 import queue
 import shutil
 import subprocess
+import tempfile
 import threading
 from collections import deque
 from fractions import Fraction
@@ -55,6 +57,18 @@ def _av1_cpu_used(preset: str) -> int:
         "fast", "medium", "slow", "slower",
     )
     return 8 - speed_order.index(preset)
+
+
+def merge_contiguous_segments(segments, tolerance=0.002):
+    """يدمج المقاطع المتلاصقة (بدون قص بينها) كي لا يظهر fade وسط كلام متواصل."""
+    merged = []
+    for segment in segments:
+        item = dict(segment)
+        if merged and abs(float(item["start"]) - float(merged[-1]["end"])) <= tolerance:
+            merged[-1]["end"] = max(float(merged[-1]["end"]), float(item["end"]))
+        else:
+            merged.append(item)
+    return merged
 
 
 class FFmpegRenderer:
@@ -189,6 +203,7 @@ class FFmpegRenderer:
                 f".{os.path.basename(output_path)}.{os.getpid()}.{threading.get_ident()}.tmp{output_extension}",
             )
             ffmpeg = FFmpegRenderer.get_ffmpeg_path()
+            filter_script_path = temp_output + ".filter.txt"
             capabilities = detect_ffmpeg_capabilities()
             if settings.format not in capabilities.get("formats", []):
                 raise ValueError(f"صيغة {settings.format.upper()} غير مدعومة في نسخة FFmpeg الحالية.")
@@ -215,6 +230,7 @@ class FFmpegRenderer:
                 output_height=output_height,
                 encoder=encoder,
                 source_fps=source_fps,
+                filter_script_path=filter_script_path,
             )
 
             try:
@@ -246,6 +262,11 @@ class FFmpegRenderer:
             finally:
                 if os.path.exists(temp_output):
                     os.remove(temp_output)
+                if os.path.exists(filter_script_path):
+                    try:
+                        os.remove(filter_script_path)
+                    except OSError:
+                        pass
         except ExportCancelledError as exc:
             return False, str(exc)
         except (OSError, RuntimeError, TypeError, ValueError, subprocess.SubprocessError) as exc:
@@ -319,6 +340,7 @@ class FFmpegRenderer:
         output_height: Optional[int],
         encoder: str,
         source_fps: Fraction,
+        filter_script_path: Optional[str] = None,
     ) -> list:
         video_filters = []
         audio_filters = []
@@ -341,9 +363,13 @@ class FFmpegRenderer:
             video_filter += ",format=yuv420p"
             video_filters.append(f"{video_filter}[v{index}]")
             if include_audio:
+                # fade قصير على حدود المقطع يمنع "التكّات" عند نقط القص
+                fade_len = min(0.010, (end - start) / 4)
                 audio_filter = (
                     f"[0:a:0]atrim=start={start:.6f}:end={end:.6f},"
-                    "asetpts=PTS-STARTPTS"
+                    "asetpts=PTS-STARTPTS,"
+                    f"afade=t=in:st=0:d={fade_len:.4f},"
+                    f"afade=t=out:st={max(0.0, (end - start) - fade_len):.6f}:d={fade_len:.4f}"
                 )
                 audio_filters.append(f"{audio_filter}[a{index}]")
 
@@ -363,6 +389,15 @@ class FFmpegRenderer:
                 filter_parts.append("[aout]loudnorm=I=-16:LRA=11:TP=-1.5[anorm]")
                 audio_output = "anorm"
 
+        filter_graph = ";".join(filter_parts)
+        if filter_script_path:
+            # الفلتر الطويل في ملف بدل سطر الأوامر (حد Windows ~32K حرف)
+            with open(filter_script_path, "w", encoding="utf-8") as handle:
+                handle.write(filter_graph)
+            filter_args = [FFmpegRenderer._filter_script_option(ffmpeg), filter_script_path]
+        else:
+            filter_args = ["-filter_complex", filter_graph]
+
         command = [
             ffmpeg,
             "-y",
@@ -374,8 +409,7 @@ class FFmpegRenderer:
             "pipe:1",
             "-i",
             source_path,
-            "-filter_complex",
-            ";".join(filter_parts),
+            *filter_args,
             "-map",
             "[vout]",
         ]
@@ -405,6 +439,37 @@ class FFmpegRenderer:
             command.extend(["-movflags", "+faststart"])
         command.append(output_path)
         return command
+
+    @staticmethod
+    @functools.lru_cache(maxsize=None)
+    def _filter_script_option(ffmpeg: str) -> str:
+        """يختار طريقة تمرير الفلتر من ملف: `-/filter_complex` (FFmpeg 7+) أو
+        `-filter_complex_script` (الأقدم)، بتجربة فعلية مرة واحدة."""
+        script_path = None
+        try:
+            descriptor, script_path = tempfile.mkstemp(prefix="auto_silence_probe_", suffix=".txt")
+            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                handle.write("color=c=black:s=16x16:d=0.1[out]")
+            result = subprocess.run(
+                [
+                    ffmpeg, "-hide_banner", "-v", "error",
+                    "-/filter_complex", script_path,
+                    "-map", "[out]", "-f", "null", "-",
+                ],
+                capture_output=True,
+                timeout=20,
+            )
+            if result.returncode == 0:
+                return "-/filter_complex"
+        except (OSError, subprocess.SubprocessError):
+            pass
+        finally:
+            if script_path and os.path.exists(script_path):
+                try:
+                    os.remove(script_path)
+                except OSError:
+                    pass
+        return "-filter_complex_script"
 
     @staticmethod
     def _aspect_filter(
@@ -650,7 +715,16 @@ class FFmpegRenderer:
         except FileExistsError as exc:
             raise FileExistsError("يوجد ملف بهذا الاسم؛ أكّد الاستبدال أو اختر اسمًا آخر.") from exc
         except OSError as exc:
-            raise OSError("تعذر إنشاء الملف النهائي دون استبدال ملف موجود.") from exc
+            # hard links غير مدعومة (exFAT / FAT32 / بعض الأقراص الشبكية): إعادة تسمية
+            if os.path.exists(output_path):
+                raise FileExistsError("يوجد ملف بهذا الاسم؛ أكّد الاستبدال أو اختر اسمًا آخر.") from exc
+            try:
+                os.rename(temp_path, output_path)
+            except FileExistsError as exists_exc:
+                raise FileExistsError("يوجد ملف بهذا الاسم؛ أكّد الاستبدال أو اختر اسمًا آخر.") from exists_exc
+            except OSError as rename_exc:
+                raise OSError("تعذر إنشاء الملف النهائي دون استبدال ملف موجود.") from rename_exc
+            return
         os.remove(temp_path)
 
     @staticmethod
