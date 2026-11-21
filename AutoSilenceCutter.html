@@ -446,101 +446,244 @@
 
   <!-- ================= ADVANCED EXPORT MODAL ================= -->
   <div id="exportModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-    <div class="bg-[#0e1624] border border-[#1d2a3f] rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200">
-      
+    <div class="bg-[#0e1624] border border-[#1d2a3f] rounded-2xl w-full max-w-5xl max-h-[92vh] overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200">
       <div class="px-6 py-4 border-b border-[#1b263a] flex items-center justify-between bg-[#0b111c]">
         <div class="flex items-center gap-2.5">
-          <div class="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">💾</div>
-          <h3 class="text-sm font-bold text-white tracking-wide">خيارات تصدير الفيديو الممنتج</h3>
+          <div class="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">EX</div>
+          <div>
+            <h3 class="text-sm font-bold text-white tracking-wide">تصدير احترافي / Professional Export</h3>
+            <p class="text-[10px] text-gray-500 mt-0.5">إعدادات فعلية لمحرك FFmpeg</p>
+          </div>
         </div>
         <button id="btnCloseExportModal" class="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-[#182336] transition">✕</button>
       </div>
 
-      <div class="p-6 flex flex-col gap-4 text-xs">
-        <div>
-          <label class="block text-gray-300 font-bold mb-1.5 flex items-center justify-between">
-            <span>اسم الفيديو النهائي (File Name):</span>
-            <span id="nameErrorBadge" class="text-[11px] text-rose-400 font-normal hidden">⚠️ الاسم يحتوي رموزاً غير مسموح بها في ويندوز</span>
-          </label>
-          <div class="relative flex items-center">
-            <input type="text" id="exportFileName" class="w-full bg-[#080d15] border border-[#1f2d43] focus:border-cyan-400 rounded-xl px-3 py-2.5 text-white font-mono text-xs outline-none transition" placeholder="مثال: My_Video_Edited">
-            <span id="exportFormatBadge" class="absolute left-3 text-gray-500 font-mono text-[11px] bg-[#141e2e] px-2 py-0.5 rounded border border-[#22314a]">.mp4</span>
-          </div>
-          <p class="text-[10px] text-gray-500 mt-1">يُمنع استخدام الرموز التالية: \ / : * ? " &lt; &gt; |</p>
-        </div>
-
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="block text-gray-300 font-bold mb-1.5">صيغة التصدير (Format):</label>
-            <select id="exportFormatSelect" class="w-full bg-[#080d15] border border-[#1f2d43] focus:border-cyan-400 rounded-xl px-3 py-2 text-white text-xs outline-none cursor-pointer">
-              <option value="mp4">MP4 Video (.mp4) - المتوافقة عالمياً</option>
-              <option value="mov">QuickTime MOV (.mov)</option>
-              <option value="mkv">Matroska (.mkv)</option>
-            </select>
-          </div>
-          <div>
-            <label class="block text-gray-300 font-bold mb-1.5">نوع المخرج:</label>
-            <select id="exportTypeSelect" class="w-full bg-[#080d15] border border-[#1f2d43] focus:border-cyan-400 rounded-xl px-3 py-2 text-white text-xs outline-none cursor-pointer">
-              <option value="video">فيديو ممنتج كامل (MP4)</option>
-              <option value="capcut">حزمة CapCut كاملة</option>
-              <option value="cuts">بيانات القص (EDL / JSON)</option>
-            </select>
-          </div>
-        </div>
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="block text-gray-300 font-bold mb-1.5">سرعة المعالجة والجودة:</label>
-            <div class="bg-[#080d15] border border-[#1f2d43] rounded-xl px-3 py-2 text-emerald-400 text-xs flex items-center gap-1.5">
-              <span>⚡</span> قص دقيق ودمج سريع بجودة عالية عبر FFmpeg
+      <div class="p-5 overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+        <section class="md:col-span-2 bg-[#0b111c] border border-[#1b263a] rounded-xl p-4">
+          <div class="flex flex-col lg:flex-row lg:items-end gap-3">
+            <div class="flex-1">
+              <label for="exportPresetSelect" class="block text-gray-300 font-bold mb-1.5">Export Preset</label>
+              <select id="exportPresetSelect" class="w-full bg-[#080d15] border border-[#1f2d43] rounded-lg px-3 py-2 text-white">
+                <option value="youtube1080">YouTube 1080p</option>
+                <option value="youtube4k">YouTube 4K</option>
+                <option value="reels">Instagram Reels</option>
+                <option value="tiktok">TikTok</option>
+                <option value="facebook">Facebook</option>
+                <option value="whatsapp">WhatsApp</option>
+                <option value="archive">High Quality Archive</option>
+                <option value="small">Small File Size</option>
+                <option value="custom">Custom</option>
+              </select>
+            </div>
+            <div class="flex gap-2">
+              <button id="btnSaveExportPreset" class="bg-[#141e2e] border border-[#24354f] text-cyan-300 px-3 py-2 rounded-lg">Save As</button>
+              <button id="btnEditExportPreset" class="bg-[#141e2e] border border-[#24354f] text-gray-300 px-3 py-2 rounded-lg">Update</button>
+              <button id="btnDeleteExportPreset" class="bg-[#141e2e] border border-[#24354f] text-rose-300 px-3 py-2 rounded-lg">Delete</button>
+              <button id="btnResetExportPreset" class="bg-[#141e2e] border border-[#24354f] text-gray-300 px-3 py-2 rounded-lg">Reset</button>
             </div>
           </div>
+        </section>
+
+        <section class="bg-[#0b111c] border border-[#1b263a] rounded-xl p-4 space-y-3">
+          <h4 class="text-sm font-bold text-white">Video Settings</h4>
+          <div class="grid grid-cols-2 gap-3">
+            <label class="text-gray-300">Resolution
+              <select id="exportResolutionSelect" title="Match Source يحافظ على أبعاد الفيديو الأصلي" class="mt-1 w-full bg-[#080d15] border border-[#1f2d43] rounded-lg px-2 py-2 text-white">
+                <option value="match_source">Match Source</option>
+                <option value="360p">360p</option><option value="480p">480p</option>
+                <option value="720p">720p HD</option><option value="1080p">1080p Full HD</option>
+                <option value="1440p">1440p 2K</option><option value="2160p">2160p 4K</option>
+                <option value="custom">Custom Resolution</option>
+              </select>
+            </label>
+            <label class="text-gray-300">Frame Rate
+              <select id="exportFrameRateSelect" title="Match Source يحافظ على معدل المصدر" class="mt-1 w-full bg-[#080d15] border border-[#1f2d43] rounded-lg px-2 py-2 text-white">
+                <option value="match_source">Match Source</option>
+                <option value="23.976">23.976 FPS</option><option value="24">24 FPS</option>
+                <option value="25">25 FPS</option><option value="29.97">29.97 FPS</option>
+                <option value="30">30 FPS</option><option value="50">50 FPS</option>
+                <option value="59.94">59.94 FPS</option><option value="60">60 FPS</option>
+                <option value="custom">Custom FPS</option>
+              </select>
+            </label>
+          </div>
+          <div id="exportCustomResolution" class="hidden grid grid-cols-2 gap-3">
+            <label class="text-gray-300">Width<input id="exportWidthInput" type="number" min="64" max="16384" step="2" value="1920" class="mt-1 w-full bg-[#080d15] border border-[#1f2d43] rounded-lg px-2 py-2 text-white"></label>
+            <label class="text-gray-300">Height<input id="exportHeightInput" type="number" min="64" max="16384" step="2" value="1080" class="mt-1 w-full bg-[#080d15] border border-[#1f2d43] rounded-lg px-2 py-2 text-white"></label>
+            <label class="col-span-2 inline-flex items-center gap-2 text-gray-300"><input id="exportLockAspect" type="checkbox" checked class="accent-cyan-500">Lock source aspect ratio</label>
+          </div>
+          <label id="exportCustomFps" class="hidden text-gray-300">Custom FPS
+            <input id="exportCustomFpsInput" type="number" min="1" max="240" step="0.001" value="30" class="mt-1 w-full bg-[#080d15] border border-[#1f2d43] rounded-lg px-2 py-2 text-white">
+          </label>
+          <div class="grid grid-cols-2 gap-3">
+            <label class="text-gray-300">Video Codec
+              <select id="exportVideoCodecSelect" class="mt-1 w-full bg-[#080d15] border border-[#1f2d43] rounded-lg px-2 py-2 text-white"></select>
+            </label>
+            <label class="text-gray-300">Video Quality
+              <select id="exportQualitySelect" class="mt-1 w-full bg-[#080d15] border border-[#1f2d43] rounded-lg px-2 py-2 text-white">
+                <option value="lower">Lower</option><option value="recommended" selected>Recommended</option>
+                <option value="high">High</option><option value="higher">Higher</option>
+                <option value="maximum">Maximum</option><option value="custom">Custom CRF</option>
+              </select>
+            </label>
+          </div>
+          <label id="exportCustomCrf" class="hidden text-gray-300">CRF: <span id="exportCustomCrfValue">23</span>
+            <input id="exportCustomCrfInput" type="range" min="0" max="51" value="23" class="mt-1 w-full accent-cyan-500">
+          </label>
+          <label class="inline-flex items-center gap-2 text-gray-300"><input id="exportAutomaticBitrate" type="checkbox" checked class="accent-cyan-500">Automatic bitrate (quality-based)</label>
+          <div id="exportBitrateControls" class="hidden space-y-2">
+            <div class="grid grid-cols-2 gap-3">
+              <label class="text-gray-300">Rate Control
+                <select id="exportRateControlSelect" class="mt-1 w-full bg-[#080d15] border border-[#1f2d43] rounded-lg px-2 py-2 text-white"><option value="vbr">VBR</option><option value="cbr">CBR</option></select>
+              </label>
+              <label class="text-gray-300">Target Mbps<input id="exportTargetBitrateInput" type="number" min="0.1" max="200" step="0.1" value="8" class="mt-1 w-full bg-[#080d15] border border-[#1f2d43] rounded-lg px-2 py-2 text-white"></label>
+              <label class="text-gray-300">Minimum Mbps<input id="exportMinBitrateInput" type="number" min="0.1" max="200" step="0.1" class="mt-1 w-full bg-[#080d15] border border-[#1f2d43] rounded-lg px-2 py-2 text-white"></label>
+              <label class="text-gray-300">Maximum Mbps<input id="exportMaxBitrateInput" type="number" min="0.1" max="200" step="0.1" class="mt-1 w-full bg-[#080d15] border border-[#1f2d43] rounded-lg px-2 py-2 text-white"></label>
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <label class="text-gray-300">Encoder Preset
+              <select id="exportEncoderPresetSelect" title="الإعدادات الأبطأ قد تقلل الحجم لكنها تزيد زمن التصدير" class="mt-1 w-full bg-[#080d15] border border-[#1f2d43] rounded-lg px-2 py-2 text-white">
+                <option value="ultrafast">Ultrafast</option><option value="superfast">Superfast</option>
+                <option value="veryfast">Veryfast</option><option value="faster">Faster</option>
+                <option value="fast">Fast</option><option value="medium" selected>Medium</option>
+                <option value="slow">Slow</option><option value="slower">Slower</option>
+              </select>
+            </label>
+            <label class="text-gray-300">Hardware
+              <select id="exportHardwareSelect" class="mt-1 w-full bg-[#080d15] border border-[#1f2d43] rounded-lg px-2 py-2 text-white">
+                <option value="auto">Auto Detect</option><option value="software">Software Encoding</option>
+              </select>
+            </label>
+          </div>
+        </section>
+
+        <section class="bg-[#0b111c] border border-[#1b263a] rounded-xl p-4 space-y-3">
+          <h4 class="text-sm font-bold text-white">Format & Aspect Ratio</h4>
+          <div class="grid grid-cols-2 gap-3">
+            <label class="text-gray-300">Container
+              <select id="exportFormatSelect" class="mt-1 w-full bg-[#080d15] border border-[#1f2d43] rounded-lg px-2 py-2 text-white">
+                <option value="mp4">MP4</option><option value="mov">MOV</option>
+                <option value="mkv">MKV</option><option value="webm">WebM</option>
+              </select>
+            </label>
+            <label class="text-gray-300">Output Type
+              <select id="exportTypeSelect" class="mt-1 w-full bg-[#080d15] border border-[#1f2d43] rounded-lg px-2 py-2 text-white">
+                <option value="video">Final Video</option>
+                <option value="capcut">Cut Package (CapCut-assisted)</option>
+                <option value="cuts">Cut Data (EDL / JSON / CSV)</option>
+              </select>
+            </label>
+            <label class="text-gray-300">Aspect Ratio
+              <select id="exportAspectRatioSelect" class="mt-1 w-full bg-[#080d15] border border-[#1f2d43] rounded-lg px-2 py-2 text-white">
+                <option value="original">Original</option><option value="16:9">16:9</option>
+                <option value="9:16">9:16</option><option value="1:1">1:1</option>
+                <option value="4:3">4:3</option><option value="21:9">21:9</option>
+                <option value="custom">Custom (resolution ratio)</option>
+              </select>
+            </label>
+            <label class="text-gray-300">Fit Method
+              <select id="exportAspectModeSelect" class="mt-1 w-full bg-[#080d15] border border-[#1f2d43] rounded-lg px-2 py-2 text-white">
+                <option value="fit">Fit (letterbox)</option><option value="fill">Fill (center crop)</option>
+                <option value="crop">Crop to frame</option>
+              </select>
+            </label>
+          </div>
+          <div class="flex items-center gap-3 rounded-lg bg-[#080d15] border border-[#1f2d43] p-3">
+            <div id="exportAspectPreview" class="border-2 border-cyan-500/70 bg-black rounded-sm w-24 aspect-video shrink-0"></div>
+            <p id="exportAspectDescription" class="text-gray-400 leading-relaxed">المعاينة تحافظ على أبعاد الصورة ولا تمددها.</p>
+          </div>
+          <label class="inline-flex items-center gap-2 text-gray-300"><input id="exportIncludeMetadata" type="checkbox" checked class="accent-cyan-500">Include source metadata</label>
+        </section>
+
+        <section class="bg-[#0b111c] border border-[#1b263a] rounded-xl p-4 space-y-3">
+          <h4 class="text-sm font-bold text-white">Audio Settings</h4>
+          <label class="inline-flex items-center gap-2 text-gray-300"><input id="exportIncludeAudio" type="checkbox" checked class="accent-cyan-500">Include Audio</label>
+          <div id="exportAudioControls" class="grid grid-cols-2 gap-3">
+            <label class="text-gray-300">Audio Codec<select id="exportAudioCodecSelect" class="mt-1 w-full bg-[#080d15] border border-[#1f2d43] rounded-lg px-2 py-2 text-white"></select></label>
+            <label class="text-gray-300">Audio Bitrate<select id="exportAudioBitrateSelect" class="mt-1 w-full bg-[#080d15] border border-[#1f2d43] rounded-lg px-2 py-2 text-white"><option>96</option><option>128</option><option>160</option><option selected>192</option><option>256</option><option>320</option></select></label>
+            <label class="text-gray-300">Sample Rate<select id="exportSampleRateSelect" class="mt-1 w-full bg-[#080d15] border border-[#1f2d43] rounded-lg px-2 py-2 text-white"><option value="match_source">Match Source</option><option value="44100">44100 Hz</option><option value="48000">48000 Hz</option></select></label>
+            <label class="text-gray-300">Channels<select id="exportChannelsSelect" class="mt-1 w-full bg-[#080d15] border border-[#1f2d43] rounded-lg px-2 py-2 text-white"><option value="match_source">Match Source</option><option value="mono">Mono</option><option value="stereo">Stereo</option></select></label>
+          </div>
+          <label class="inline-flex items-center gap-2 text-gray-300"><input id="exportNormalizeAudio" type="checkbox" class="accent-cyan-500">Loudness normalization (EBU R128)</label>
+          <p class="text-[10px] text-gray-500">Audio and video use the same source in/out points to preserve synchronization.</p>
+        </section>
+
+        <section class="bg-[#0b111c] border border-[#1b263a] rounded-xl p-4 space-y-3">
+          <h4 class="text-sm font-bold text-white">Export Range</h4>
+          <label class="text-gray-300">Range
+            <select id="exportRangeSelect" class="mt-1 w-full bg-[#080d15] border border-[#1f2d43] rounded-lg px-2 py-2 text-white">
+              <option value="entire_timeline">Entire Timeline / Current Sequence</option>
+              <option value="selected_range">Selected Range</option>
+            </select>
+          </label>
+          <div id="exportRangeControls" class="hidden grid grid-cols-2 gap-3">
+            <label class="text-gray-300">Start (seconds)<input id="exportRangeStartInput" type="number" min="0" step="0.001" value="0" class="mt-1 w-full bg-[#080d15] border border-[#1f2d43] rounded-lg px-2 py-2 text-white"></label>
+            <label class="text-gray-300">End (seconds)<input id="exportRangeEndInput" type="number" min="0" step="0.001" value="0" class="mt-1 w-full bg-[#080d15] border border-[#1f2d43] rounded-lg px-2 py-2 text-white"></label>
+          </div>
+          <p id="exportRangeHelp" class="text-[10px] text-gray-500">تُحسب نقاط النطاق على تسلسل المقاطع المحفوظة بعد القص.</p>
+        </section>
+
+        <section class="md:col-span-2 bg-[#0b111c] border border-[#1b263a] rounded-xl p-4 space-y-3">
+          <h4 class="text-sm font-bold text-white">Destination</h4>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-gray-300 font-bold mb-1.5">File Name</label>
+              <div class="relative flex items-center">
+                <input type="text" id="exportFileName" class="w-full bg-[#080d15] border border-[#1f2d43] focus:border-cyan-400 rounded-lg px-3 py-2.5 text-white font-mono outline-none" placeholder="Edited">
+                <span id="exportFormatBadge" class="absolute left-3 text-gray-500 font-mono text-[11px] bg-[#141e2e] px-2 py-0.5 rounded border border-[#22314a]">.mp4</span>
+              </div>
+              <span id="nameErrorBadge" class="text-[10px] text-rose-400 hidden">اسم الملف يحتوي رموزًا غير مسموحة.</span>
+            </div>
+            <div>
+              <label class="block text-gray-300 font-bold mb-1.5">Save Folder</label>
+              <div class="flex gap-2">
+                <input type="text" id="exportFolderPath" readonly class="min-w-0 flex-1 bg-[#080d15] border border-[#1f2d43] text-gray-300 font-mono rounded-lg px-3 py-2.5 truncate">
+                <button id="btnBrowseFolder" class="bg-[#141e2e] border border-[#24354f] text-cyan-300 px-3 rounded-lg">Browse</button>
+                <button id="btnOpenFolder" class="bg-[#141e2e] border border-[#24354f] text-gray-300 px-3 rounded-lg">Open</button>
+              </div>
+            </div>
+          </div>
+          <div id="fullPathPreview" class="text-white font-mono text-[11px] break-all dir-ltr text-left bg-[#080d15] p-2 rounded-lg border border-[#162234]">-</div>
+        </section>
+
+        <section class="md:col-span-2 bg-[#080d15] border border-cyan-900/40 rounded-xl p-4">
+          <h4 class="text-sm font-bold text-cyan-300 mb-3">Export Summary / Preview</h4>
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-2 text-[11px]">
+            <div><span class="text-gray-500">Resolution</span><div id="exportSummaryResolution" class="text-gray-200 mt-0.5">-</div></div>
+            <div><span class="text-gray-500">FPS</span><div id="exportSummaryFps" class="text-gray-200 mt-0.5">-</div></div>
+            <div><span class="text-gray-500">Video</span><div id="exportSummaryVideo" class="text-gray-200 mt-0.5">-</div></div>
+            <div><span class="text-gray-500">Format</span><div id="exportSummaryFormat" class="text-gray-200 mt-0.5">-</div></div>
+            <div><span class="text-gray-500">Audio</span><div id="exportSummaryAudio" class="text-gray-200 mt-0.5">-</div></div>
+            <div><span class="text-gray-500">Duration</span><div id="exportSummaryDuration" class="text-gray-200 mt-0.5">-</div></div>
+            <div><span class="text-gray-500">Estimated Size</span><div id="exportSummarySize" class="text-gray-200 mt-0.5">-</div></div>
+            <div><span class="text-gray-500">Storage Needed (est.)</span><div id="exportSummaryStorage" class="text-gray-200 mt-0.5">-</div></div>
+          </div>
+        </section>
+
+        <div id="overwriteWarning" class="hidden md:col-span-2 bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 flex items-center justify-between text-xs text-amber-300">
+          <span>يوجد ملف أو مجلد سابق. لن يُستبدل إلا بعد تأكيدك.</span>
+          <div class="flex gap-2">
+            <button id="btnConfirmOverwrite" class="bg-amber-600 hover:bg-amber-500 text-white font-bold px-3 py-1 rounded-lg">Confirm Replace</button>
+            <button id="btnChangeName" class="bg-[#141e2e] text-gray-300 px-3 py-1 rounded-lg">Change Name</button>
+          </div>
         </div>
 
-        <div>
-          <label class="block text-gray-300 font-bold mb-1.5">مكان حفظ الفيديو (Save Location):</label>
-          <div class="flex items-center gap-2">
-            <input type="text" id="exportFolderPath" readonly class="flex-1 bg-[#080d15] border border-[#1f2d43] text-gray-300 font-mono text-xs rounded-xl px-3 py-2.5 outline-none truncate">
-            <button id="btnBrowseFolder" class="bg-[#141e2e] hover:bg-[#1b283d] text-cyan-400 font-bold border border-[#24354f] px-3.5 py-2.5 rounded-xl transition flex items-center gap-1">
-              <span>📂</span> Browse...
-            </button>
-            <button id="btnOpenFolder" class="bg-[#141e2e] hover:bg-[#1b283d] text-gray-300 border border-[#24354f] px-3.5 py-2.5 rounded-xl transition flex items-center gap-1">
-              <span>🔍</span> Open Folder
-            </button>
+        <div id="exportProgressContainer" class="hidden md:col-span-2 bg-[#080d15] border border-[#1b263a] rounded-xl p-4 space-y-2">
+          <div class="flex items-center justify-between gap-3 text-xs">
+            <span id="exportStatusText" class="text-cyan-300 font-bold">Preparing Timeline</span>
+            <span id="exportPercentText" class="font-mono text-gray-300">0%</span>
           </div>
-        </div>
-
-        <div class="bg-[#080d15] border border-cyan-900/40 rounded-xl p-3 flex flex-col gap-1">
-          <div class="text-[11px] text-cyan-400 font-bold flex items-center gap-1.5">
-            <span>🎯</span> معاينة مسار الحفظ النهائي (Output Preview):
-          </div>
-          <div id="fullPathPreview" class="text-white font-mono text-[11px] break-all leading-relaxed dir-ltr text-left bg-[#0c131f] p-2 rounded-lg border border-[#162234]">
-            -
-          </div>
-        </div>
-
-        <div id="overwriteWarning" class="hidden bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 flex items-center justify-between text-xs text-amber-300">
-          <div class="flex items-center gap-2">
-            <span>⚠️</span>
-            <span>يوجد ملف بنفس الاسم في هذا المجلد، هل تريد استبداله؟</span>
-          </div>
-          <div class="flex items-center gap-2">
-            <button id="btnConfirmOverwrite" class="bg-amber-600 hover:bg-amber-500 text-white font-bold px-3 py-1 rounded-lg transition text-[11px]">
-              استبدال (Replace)
-            </button>
-            <button id="btnChangeName" class="bg-[#141e2e] hover:bg-[#1b283d] text-gray-300 px-3 py-1 rounded-lg transition text-[11px]">
-              تغيير الاسم
-            </button>
-          </div>
-        </div>
-
-        <div id="exportProgressContainer" class="hidden flex flex-col gap-1.5 pt-2 border-t border-[#1b263a]">
-          <div class="flex items-center justify-between text-xs">
-            <span id="exportStatusText" class="text-cyan-400 font-bold">جاري تقطيع وتصدير الفيديو عبر FFmpeg...</span>
-            <span id="exportPercentText" class="font-mono text-gray-400">0%</span>
-          </div>
-          <div class="w-full bg-[#080d15] h-2 rounded-full overflow-hidden">
+          <div class="w-full bg-[#141e2e] h-2 rounded-full overflow-hidden">
             <div id="exportProgressBar" class="bg-emerald-500 h-full rounded-full transition-all duration-200" style="width: 0%"></div>
           </div>
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px] text-gray-400">
+            <div>Stage: <span id="exportStageText" class="text-gray-200">Preparing</span></div>
+            <div>Elapsed: <span id="exportElapsedText" class="text-gray-200">-</span></div>
+            <div>Remaining: <span id="exportEtaText" class="text-gray-200">-</span></div>
+            <div>FPS / Speed: <span id="exportStatsText" class="text-gray-200">-</span></div>
+          </div>
+          <div class="text-[10px] text-gray-400">Output size: <span id="exportOutputSizeText" class="text-gray-200">-</span></div>
         </div>
       </div>
 
@@ -549,10 +692,9 @@
           إلغاء
         </button>
         <button id="btnStartExport" class="bg-emerald-600 hover:bg-emerald-500 text-white font-black px-6 py-2.5 rounded-xl shadow-lg shadow-emerald-600/30 transition flex items-center gap-2">
-          <span>🚀</span> بدء التصدير (Start Export)
+          Confirm Export
         </button>
       </div>
-
     </div>
   </div>
 
@@ -660,6 +802,44 @@
     let exportFormatSelect = document.getElementById('exportFormatSelect');
     let exportTypeSelect = document.getElementById('exportTypeSelect');
     let exportFormatBadge = document.getElementById('exportFormatBadge');
+    let exportPresetSelect = document.getElementById('exportPresetSelect');
+    let exportResolutionSelect = document.getElementById('exportResolutionSelect');
+    let exportWidthInput = document.getElementById('exportWidthInput');
+    let exportHeightInput = document.getElementById('exportHeightInput');
+    let exportLockAspect = document.getElementById('exportLockAspect');
+    let exportFrameRateSelect = document.getElementById('exportFrameRateSelect');
+    let exportCustomFpsInput = document.getElementById('exportCustomFpsInput');
+    let exportVideoCodecSelect = document.getElementById('exportVideoCodecSelect');
+    let exportQualitySelect = document.getElementById('exportQualitySelect');
+    let exportCustomCrfInput = document.getElementById('exportCustomCrfInput');
+    let exportAutomaticBitrate = document.getElementById('exportAutomaticBitrate');
+    let exportRateControlSelect = document.getElementById('exportRateControlSelect');
+    let exportTargetBitrateInput = document.getElementById('exportTargetBitrateInput');
+    let exportMinBitrateInput = document.getElementById('exportMinBitrateInput');
+    let exportMaxBitrateInput = document.getElementById('exportMaxBitrateInput');
+    let exportEncoderPresetSelect = document.getElementById('exportEncoderPresetSelect');
+    let exportHardwareSelect = document.getElementById('exportHardwareSelect');
+    let exportAspectRatioSelect = document.getElementById('exportAspectRatioSelect');
+    let exportAspectModeSelect = document.getElementById('exportAspectModeSelect');
+    let exportIncludeMetadata = document.getElementById('exportIncludeMetadata');
+    let exportIncludeAudio = document.getElementById('exportIncludeAudio');
+    let exportAudioCodecSelect = document.getElementById('exportAudioCodecSelect');
+    let exportAudioBitrateSelect = document.getElementById('exportAudioBitrateSelect');
+    let exportSampleRateSelect = document.getElementById('exportSampleRateSelect');
+    let exportChannelsSelect = document.getElementById('exportChannelsSelect');
+    let exportNormalizeAudio = document.getElementById('exportNormalizeAudio');
+    let exportRangeSelect = document.getElementById('exportRangeSelect');
+    let exportRangeStartInput = document.getElementById('exportRangeStartInput');
+    let exportRangeEndInput = document.getElementById('exportRangeEndInput');
+    let exportStageText = document.getElementById('exportStageText');
+    let exportElapsedText = document.getElementById('exportElapsedText');
+    let exportEtaText = document.getElementById('exportEtaText');
+    let exportStatsText = document.getElementById('exportStatsText');
+    let exportOutputSizeText = document.getElementById('exportOutputSizeText');
+    let exportCustomPresets = [];
+    let exportCapabilities = null;
+    let exportIsRunning = false;
+    let activeExportPollCancel = null;
     let fullPathPreview = document.getElementById('fullPathPreview');
     let btnBrowseFolder = document.getElementById('btnBrowseFolder');
     let btnOpenFolder = document.getElementById('btnOpenFolder');
@@ -3003,187 +3183,636 @@
       return cleaned;
     }
 
-    function updatePathPreview() {
-      let rawName = exportFileName.value.trim();
-      let format = exportFormatSelect.value;
-      let exportType = exportTypeSelect.value;
-      let folder = exportFolderPath.value.trim();
+    let exportSourceInfo = null;
+    const EXPORT_PRESET_SETTINGS = {
+      youtube1080: { format: 'mp4', resolution: '1080p', frame_rate: 'match_source', video_codec: 'h264', quality: 'high', aspect_ratio: '16:9', aspect_mode: 'fit', audio_codec: 'aac', audio_bitrate_kbps: 192 },
+      youtube4k: { format: 'mp4', resolution: '2160p', frame_rate: 'match_source', video_codec: 'h264', quality: 'high', aspect_ratio: '16:9', aspect_mode: 'fit', audio_codec: 'aac', audio_bitrate_kbps: 256 },
+      reels: { format: 'mp4', resolution: '1080p', frame_rate: '30', video_codec: 'h264', quality: 'high', aspect_ratio: '9:16', aspect_mode: 'fit', audio_codec: 'aac', audio_bitrate_kbps: 192 },
+      tiktok: { format: 'mp4', resolution: '1080p', frame_rate: '30', video_codec: 'h264', quality: 'high', aspect_ratio: '9:16', aspect_mode: 'fit', audio_codec: 'aac', audio_bitrate_kbps: 192 },
+      facebook: { format: 'mp4', resolution: '1080p', frame_rate: 'match_source', video_codec: 'h264', quality: 'recommended', aspect_ratio: 'original', aspect_mode: 'fit', audio_codec: 'aac', audio_bitrate_kbps: 192 },
+      whatsapp: { format: 'mp4', resolution: '720p', frame_rate: 'match_source', video_codec: 'h264', quality: 'lower', aspect_ratio: 'original', aspect_mode: 'fit', audio_codec: 'aac', audio_bitrate_kbps: 128 },
+      archive: { format: 'mkv', resolution: '2160p', frame_rate: 'match_source', video_codec: 'hevc', quality: 'maximum', encoder_preset: 'slow', aspect_ratio: 'original', aspect_mode: 'fit', audio_codec: 'pcm', include_audio: true },
+      small: { format: 'mp4', resolution: '720p', frame_rate: 'match_source', video_codec: 'hevc', quality: 'lower', aspect_ratio: 'original', aspect_mode: 'fit', audio_codec: 'aac', audio_bitrate_kbps: 128 }
+    };
+    const FORMAT_VIDEO_COMPATIBILITY = {
+      mp4: ['h264', 'hevc', 'av1'], mov: ['h264', 'hevc'],
+      mkv: ['h264', 'hevc', 'av1'], webm: ['av1']
+    };
+    const FORMAT_AUDIO_COMPATIBILITY = {
+      mp4: ['aac', 'mp3'], mov: ['aac', 'mp3', 'pcm'],
+      mkv: ['aac', 'mp3', 'pcm', 'opus', 'vorbis'], webm: ['opus', 'vorbis']
+    };
+    const EXPORT_LABELS = {
+      preparing: 'Preparing Timeline',
+      processing_video: 'Processing video',
+      processing_clips: 'Processing separate clips',
+      encoding: 'Encoding video and audio',
+      finalizing: 'Finalizing and validating file',
+      cancelling: 'Cancelling and cleaning temporary files',
+      completed: 'Export completed',
+      cancelled: 'Export cancelled',
+      error: 'Export failed'
+    };
 
-      if (INVALID_WIN_CHARS.test(rawName)) {
-        nameErrorBadge.classList.remove('hidden');
-      } else {
-        nameErrorBadge.classList.add('hidden');
+    function numberOrNull(value) {
+      if (String(value).trim() === '') return null;
+      const number = Number(value);
+      return Number.isFinite(number) ? number : null;
+    }
+
+    function currentExportSettings() {
+      return {
+        format: exportFormatSelect.value,
+        resolution: exportResolutionSelect.value,
+        width: exportResolutionSelect.value === 'custom' ? Number(exportWidthInput.value) : null,
+        height: exportResolutionSelect.value === 'custom' ? Number(exportHeightInput.value) : null,
+        lock_aspect_ratio: exportLockAspect.checked,
+        frame_rate: exportFrameRateSelect.value,
+        custom_fps: Number(exportCustomFpsInput.value),
+        video_codec: exportVideoCodecSelect.value || 'h264',
+        quality: exportQualitySelect.value,
+        custom_crf: Number(exportCustomCrfInput.value),
+        automatic_bitrate: exportAutomaticBitrate.checked,
+        rate_control: exportRateControlSelect.value,
+        target_bitrate_mbps: Number(exportTargetBitrateInput.value),
+        min_bitrate_mbps: numberOrNull(exportMinBitrateInput.value),
+        max_bitrate_mbps: numberOrNull(exportMaxBitrateInput.value),
+        encoder_preset: exportEncoderPresetSelect.value,
+        audio_codec: exportAudioCodecSelect.value || 'aac',
+        audio_bitrate_kbps: Number(exportAudioBitrateSelect.value),
+        sample_rate: exportSampleRateSelect.value,
+        channels: exportChannelsSelect.value,
+        include_audio: exportIncludeAudio.checked,
+        normalize_audio: exportNormalizeAudio.checked,
+        aspect_ratio: exportAspectRatioSelect.value,
+        aspect_mode: exportAspectModeSelect.value,
+        include_metadata: exportIncludeMetadata.checked,
+        export_range: exportRangeSelect.value,
+        range_start_seconds: Number(exportRangeStartInput.value),
+        range_end_seconds: Number(exportRangeEndInput.value),
+        hardware_acceleration: exportHardwareSelect.value
+      };
+    }
+
+    function selectedTimelineDuration() {
+      return segments.filter(item => !item.cut && item.end > item.start)
+        .reduce((total, item) => total + item.end - item.start, 0);
+    }
+
+    function getSourceAspectRatio() {
+      const width = Number(exportSourceInfo?.width || mainVideo.videoWidth || 1920);
+      const height = Number(exportSourceInfo?.height || mainVideo.videoHeight || 1080);
+      return height > 0 ? width / height : 16 / 9;
+    }
+
+    function getExportDimensions(settings) {
+      let ratio = getSourceAspectRatio();
+      if (settings.aspect_ratio && settings.aspect_ratio !== 'original' && settings.aspect_ratio !== 'custom') {
+        const [width, height] = settings.aspect_ratio.split(':').map(Number);
+        ratio = width / height;
+      } else if (settings.aspect_ratio === 'custom' && settings.width && settings.height) {
+        ratio = settings.width / settings.height;
       }
+      if (settings.resolution === 'custom') {
+        const width = Number(settings.width);
+        const height = settings.lock_aspect_ratio ? Math.round(width / ratio / 2) * 2 : Number(settings.height);
+        return [width, height];
+      }
+      const heights = { '360p': 360, '480p': 480, '720p': 720, '1080p': 1080, '1440p': 1440, '2160p': 2160 };
+      if (heights[settings.resolution]) {
+        const height = heights[settings.resolution];
+        return [Math.round(height * ratio / 2) * 2, height];
+      }
+      if (settings.aspect_ratio !== 'original') {
+        const height = Number(exportSourceInfo?.height || mainVideo.videoHeight || 1080);
+        return [Math.round(height * ratio / 2) * 2, height];
+      }
+      return [
+        Number(exportSourceInfo?.width || mainVideo.videoWidth || 1920),
+        Number(exportSourceInfo?.height || mainVideo.videoHeight || 1080)
+      ];
+    }
 
-      let cleanName = sanitizeFileName(rawName) || "Output_Video";
-      let fullFileName = `${cleanName}.${format}`;
-      let sep = folder.endsWith('\\') || folder.endsWith('/') ? '' : '\\';
-      let fullPath = exportType === 'capcut'
+    function estimatedExportBitrateKbps(settings, dimensions, fps) {
+      if (!settings.automatic_bitrate) return Math.round(settings.target_bitrate_mbps * 1000);
+      const codecFactor = { h264: 1, hevc: 0.58, av1: 0.48 }[settings.video_codec] || 1;
+      const qualityFactor = { lower: 0.65, recommended: 1, high: 1.3, higher: 1.6, maximum: 2 }[settings.quality] || 1;
+      const [width, height] = dimensions;
+      const referenceCrf = { h264: 23, hevc: 28, av1: 32 }[settings.video_codec] || 23;
+      const base = width * height * Math.max(1, fps) * 0.07 * codecFactor / 1000;
+      if (settings.quality === 'custom') {
+        return Math.min(200000, base * Math.pow(2, (referenceCrf - settings.custom_crf) / 6));
+      }
+      return base * qualityFactor;
+    }
+
+    function formatBytes(bytes) {
+      if (!Number.isFinite(bytes) || bytes < 0) return 'Unavailable';
+      const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+      let value = bytes;
+      let unit = 0;
+      while (value >= 1024 && unit < units.length - 1) {
+        value /= 1024;
+        unit++;
+      }
+      return `${value.toFixed(unit > 1 ? 1 : 0)} ${units[unit]}`;
+    }
+
+    function formatElapsed(seconds) {
+      if (!Number.isFinite(Number(seconds)) || Number(seconds) < 0) return '-';
+      const value = Math.floor(Number(seconds));
+      return `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`;
+    }
+
+    function refreshCodecOptions() {
+      const oldVideoCodec = exportVideoCodecSelect.value;
+      const format = exportFormatSelect.value;
+      const supportedVideo = exportCapabilities?.video_codecs || ['h264', 'hevc', 'av1'];
+      const allowedVideo = (FORMAT_VIDEO_COMPATIBILITY[format] || []).filter(codec => supportedVideo.includes(codec));
+      const videoLabels = { h264: 'H.264 / AVC', hevc: 'H.265 / HEVC', av1: 'AV1' };
+      exportVideoCodecSelect.replaceChildren(...allowedVideo.map(codec => new Option(videoLabels[codec], codec)));
+      exportVideoCodecSelect.value = allowedVideo.includes(oldVideoCodec) ? oldVideoCodec : (allowedVideo[0] || '');
+      if (!allowedVideo.length) throw new Error(`No compatible video encoder is available for ${format.toUpperCase()}.`);
+
+      const oldAudioCodec = exportAudioCodecSelect.value;
+      const supportedAudio = exportCapabilities?.audio_codecs || ['aac', 'mp3', 'pcm', 'opus', 'vorbis'];
+      const allowedAudio = (FORMAT_AUDIO_COMPATIBILITY[format] || []).filter(codec => supportedAudio.includes(codec));
+      const audioLabels = { aac: 'AAC', mp3: 'MP3', pcm: 'PCM', opus: 'Opus', vorbis: 'Vorbis' };
+      exportAudioCodecSelect.replaceChildren(...allowedAudio.map(codec => new Option(audioLabels[codec], codec)));
+      exportAudioCodecSelect.value = allowedAudio.includes(oldAudioCodec) ? oldAudioCodec : (allowedAudio[0] || '');
+      exportIncludeAudio.disabled = !allowedAudio.length;
+      if (!allowedAudio.length) exportIncludeAudio.checked = false;
+      exportAudioCodecSelect.disabled = !exportIncludeAudio.checked;
+
+      const oldHardware = exportHardwareSelect.value;
+      const hardware = exportCapabilities?.hardware?.[exportVideoCodecSelect.value] || [];
+      const hardwareOptions = [
+        new Option('Auto Detect', 'auto'),
+        new Option('Software Encoding', 'software'),
+        ...hardware.map(name => new Option(name.toUpperCase(), name))
+      ];
+      exportHardwareSelect.replaceChildren(...hardwareOptions);
+      exportHardwareSelect.value = hardwareOptions.some(option => option.value === oldHardware) ? oldHardware : 'auto';
+      exportCustomCrfInput.max = exportVideoCodecSelect.value === 'av1' ? '63' : '51';
+      document.getElementById('exportCustomCrfValue').textContent = exportCustomCrfInput.value;
+    }
+
+    async function loadExportCapabilities() {
+      const response = await fetch('/api/export_capabilities');
+      const data = await response.json();
+      if (!response.ok || data.success === false) {
+        throw new Error(data.error || `FFmpeg capability check failed (${response.status}).`);
+      }
+      exportCapabilities = data.capabilities;
+      exportSourceInfo = data.source_info || null;
+      refreshCodecOptions();
+      updateExportControls();
+      return data;
+    }
+
+    function applyExportSettings(settings) {
+      if (settings.format) exportFormatSelect.value = settings.format;
+      refreshCodecOptions();
+      const assign = (element, key) => {
+        if (settings[key] !== undefined && settings[key] !== null) element.value = String(settings[key]);
+      };
+      assign(exportResolutionSelect, 'resolution');
+      assign(exportWidthInput, 'width');
+      assign(exportHeightInput, 'height');
+      assign(exportFrameRateSelect, 'frame_rate');
+      assign(exportCustomFpsInput, 'custom_fps');
+      assign(exportVideoCodecSelect, 'video_codec');
+      assign(exportQualitySelect, 'quality');
+      assign(exportCustomCrfInput, 'custom_crf');
+      assign(exportRateControlSelect, 'rate_control');
+      assign(exportTargetBitrateInput, 'target_bitrate_mbps');
+      assign(exportMinBitrateInput, 'min_bitrate_mbps');
+      assign(exportMaxBitrateInput, 'max_bitrate_mbps');
+      assign(exportEncoderPresetSelect, 'encoder_preset');
+      assign(exportAudioCodecSelect, 'audio_codec');
+      assign(exportAudioBitrateSelect, 'audio_bitrate_kbps');
+      assign(exportSampleRateSelect, 'sample_rate');
+      assign(exportChannelsSelect, 'channels');
+      assign(exportAspectRatioSelect, 'aspect_ratio');
+      assign(exportAspectModeSelect, 'aspect_mode');
+      assign(exportRangeSelect, 'export_range');
+      assign(exportRangeStartInput, 'range_start_seconds');
+      assign(exportRangeEndInput, 'range_end_seconds');
+      assign(exportHardwareSelect, 'hardware_acceleration');
+      if (settings.lock_aspect_ratio !== undefined) exportLockAspect.checked = Boolean(settings.lock_aspect_ratio);
+      if (settings.automatic_bitrate !== undefined) exportAutomaticBitrate.checked = Boolean(settings.automatic_bitrate);
+      if (settings.include_audio !== undefined) exportIncludeAudio.checked = Boolean(settings.include_audio);
+      if (settings.normalize_audio !== undefined) exportNormalizeAudio.checked = Boolean(settings.normalize_audio);
+      if (settings.include_metadata !== undefined) exportIncludeMetadata.checked = Boolean(settings.include_metadata);
+      refreshCodecOptions();
+      updateExportControls();
+    }
+
+    function clientSettingsError(settings) {
+      const videoAllowed = (FORMAT_VIDEO_COMPATIBILITY[settings.format] || []);
+      const audioAllowed = (FORMAT_AUDIO_COMPATIBILITY[settings.format] || []);
+      if (!exportCapabilities?.formats?.includes(settings.format)) return 'Selected container is not supported by this FFmpeg build.';
+      if (!videoAllowed.includes(settings.video_codec) || !exportCapabilities.video_codecs.includes(settings.video_codec)) return 'Selected video codec is not available for this container.';
+      if (!audioAllowed.includes(settings.audio_codec) || !exportCapabilities.audio_codecs.includes(settings.audio_codec)) return 'Selected audio codec is not available for this container.';
+      if (settings.resolution === 'custom' && (!Number.isInteger(settings.width) || !Number.isInteger(settings.height) || settings.width < 64 || settings.height < 64 || settings.width % 2 || settings.height % 2)) return 'Custom dimensions must be even numbers of at least 64.';
+      if (settings.export_range === 'selected_range' && (!(settings.range_start_seconds >= 0) || !(settings.range_end_seconds > settings.range_start_seconds) || settings.range_end_seconds > selectedTimelineDuration())) return 'Selected range is outside the edited timeline.';
+      if (!settings.automatic_bitrate && (!(settings.target_bitrate_mbps >= 0.1) || settings.target_bitrate_mbps > 200)) return 'Target bitrate must be between 0.1 and 200 Mbps.';
+      if (!settings.automatic_bitrate && settings.min_bitrate_mbps !== null && settings.min_bitrate_mbps > settings.target_bitrate_mbps) return 'Minimum bitrate cannot exceed target bitrate.';
+      if (!settings.automatic_bitrate && settings.max_bitrate_mbps !== null && settings.max_bitrate_mbps < settings.target_bitrate_mbps) return 'Maximum bitrate cannot be below target bitrate.';
+      return '';
+    }
+
+    function updateAspectPreview(settings) {
+      const ratios = { '16:9': 16 / 9, '9:16': 9 / 16, '1:1': 1, '4:3': 4 / 3, '21:9': 21 / 9 };
+      const ratio = ratios[settings.aspect_ratio] || (settings.aspect_ratio === 'custom' && settings.width && settings.height ? settings.width / settings.height : getSourceAspectRatio());
+      const box = document.getElementById('exportAspectPreview');
+      const maxWidth = 112;
+      const maxHeight = 68;
+      let width = maxWidth;
+      let height = width / ratio;
+      if (height > maxHeight) {
+        height = maxHeight;
+        width = height * ratio;
+      }
+      box.style.width = `${Math.max(20, width)}px`;
+      box.style.height = `${Math.max(20, height)}px`;
+      document.getElementById('exportAspectDescription').textContent =
+        `${settings.aspect_ratio === 'original' ? 'Original source ratio' : settings.aspect_ratio} · ${settings.aspect_mode.toUpperCase()} · no image stretching`;
+    }
+
+    function updateExportControls() {
+      const resolutionCustom = exportResolutionSelect.value === 'custom';
+      document.getElementById('exportCustomResolution').classList.toggle('hidden', !resolutionCustom);
+      document.getElementById('exportCustomFps').classList.toggle('hidden', exportFrameRateSelect.value !== 'custom');
+      document.getElementById('exportCustomCrf').classList.toggle('hidden', exportQualitySelect.value !== 'custom');
+      document.getElementById('exportBitrateControls').classList.toggle('hidden', exportAutomaticBitrate.checked);
+      document.getElementById('exportRangeControls').classList.toggle('hidden', exportRangeSelect.value !== 'selected_range');
+      document.getElementById('exportAudioControls').classList.toggle('opacity-50', !exportIncludeAudio.checked);
+      exportAudioCodecSelect.disabled = !exportIncludeAudio.checked;
+      document.getElementById('exportCustomCrfValue').textContent = exportCustomCrfInput.value;
+      exportFormatBadge.textContent = `.${exportFormatSelect.value}`;
+      const settings = currentExportSettings();
+      updateAspectPreview(settings);
+      updateSummary(settings);
+      updatePathPreview();
+    }
+
+    function updateSummary(settings) {
+      const dimensions = getExportDimensions(settings);
+      const fpsDisplay = settings.frame_rate === 'match_source'
+        ? `Match Source (${exportSourceInfo?.fps_label || 'probe on render'})`
+        : settings.frame_rate === 'custom' ? `${settings.custom_fps} FPS` : `${settings.frame_rate} FPS`;
+      const fpsNumber = settings.frame_rate === 'match_source'
+        ? Number(exportSourceInfo?.fps || 30)
+        : settings.frame_rate === 'custom' ? settings.custom_fps : Number(settings.frame_rate);
+      const total = selectedTimelineDuration();
+      const exportDuration = settings.export_range === 'selected_range'
+        ? Math.max(0, settings.range_end_seconds - settings.range_start_seconds)
+        : total;
+      const videoKbps = estimatedExportBitrateKbps(settings, dimensions, fpsNumber);
+      const audioKbps = !settings.include_audio ? 0
+        : settings.audio_codec === 'pcm' ? 1536
+          : Number(settings.audio_bitrate_kbps || 192);
+      const estimate = exportDuration * (videoKbps + audioKbps) * 1000 / 8;
+      const packageMultiplier = exportTypeSelect.value === 'capcut' ? 2 : 1;
+      document.getElementById('exportSummaryResolution').textContent = `${dimensions[0]} × ${dimensions[1]}`;
+      document.getElementById('exportSummaryFps').textContent = fpsDisplay;
+      document.getElementById('exportSummaryVideo').textContent =
+        `${settings.video_codec.toUpperCase()} · ${settings.automatic_bitrate ? settings.quality : `${settings.target_bitrate_mbps} Mbps ${settings.rate_control.toUpperCase()}`}`;
+      document.getElementById('exportSummaryFormat').textContent = settings.format.toUpperCase();
+      document.getElementById('exportSummaryAudio').textContent = settings.include_audio
+        ? `${settings.audio_codec.toUpperCase()} · ${settings.audio_bitrate_kbps} kbps`
+        : 'No audio';
+      document.getElementById('exportSummaryDuration').textContent = `${formatTime(exportDuration)} (${exportDuration.toFixed(2)} s)`;
+      document.getElementById('exportSummarySize').textContent = `${formatBytes(estimate)} (estimate)`;
+      document.getElementById('exportSummaryStorage').textContent = `${formatBytes(estimate * packageMultiplier * 1.08)} (estimate)`;
+    }
+
+    function updatePathPreview() {
+      const rawName = exportFileName.value.trim();
+      const format = exportFormatSelect.value;
+      const exportType = exportTypeSelect.value;
+      const folder = exportFolderPath.value.trim();
+      nameErrorBadge.classList.toggle('hidden', !INVALID_WIN_CHARS.test(rawName));
+      const cleanName = sanitizeFileName(rawName) || 'Output_Video';
+      const fullFileName = `${cleanName}.${format}`;
+      const sep = folder.endsWith('\\') || folder.endsWith('/') ? '' : '\\';
+      const fullPath = exportType === 'capcut'
         ? `${folder}${sep}AUTO_SILENCE_CAPCUT_PACKAGE`
         : exportType === 'cuts'
           ? `${folder}${sep}${cleanName}`
           : `${folder}${sep}${fullFileName}`;
-      
       fullPathPreview.textContent = fullPath;
       return { folder, fullFileName, fullPath, cleanName };
     }
 
-    exportFileName.addEventListener('input', function() {
-      isOverwritingAllowed = false;
-      overwriteWarning.classList.add('hidden');
-      updatePathPreview();
-      scheduleProjectAutosave();
-    });
-
-    exportFormatSelect.addEventListener('change', function() {
-      let fmt = exportFormatSelect.value;
-      exportFormatBadge.textContent = "." + fmt;
-      localStorage.setItem('auto_silence_export_format', fmt);
-      isOverwritingAllowed = false;
-      overwriteWarning.classList.add('hidden');
-      updatePathPreview();
-      scheduleProjectAutosave();
-    });
-
-    exportTypeSelect.addEventListener('change', function() {
-      isOverwritingAllowed = false;
-      overwriteWarning.classList.add('hidden');
-      updatePathPreview();
-      scheduleProjectAutosave();
-    });
-
-    btnBrowseFolder.addEventListener('click', async function() {
+    async function loadCustomExportPresets() {
       try {
-        let resp = await fetch('/api/browse_folder', { method: 'POST' });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        let data = await resp.json();
+        const saved = JSON.parse(localStorage.getItem('auto_silence_export_presets') || '[]');
+        if (!Array.isArray(saved)) throw new Error('Custom presets must be stored as an array.');
+        exportCustomPresets = saved.filter(item => item && typeof item.id === 'string' && typeof item.name === 'string' && item.settings && typeof item.settings === 'object');
+      } catch (error) {
+        console.error('Could not read custom export presets:', error);
+        exportCustomPresets = [];
+        alert(`تعذر تحميل إعدادات Preset المحفوظة: ${error.message || error}`);
+      }
+      const builtins = Array.from(exportPresetSelect.options).filter(option => !option.value.startsWith('custom:'));
+      exportPresetSelect.replaceChildren(...builtins);
+      exportCustomPresets.forEach(item => exportPresetSelect.add(new Option(`${item.name} (Custom)`, `custom:${item.id}`)));
+    }
+
+    function persistCustomExportPresets() {
+      localStorage.setItem('auto_silence_export_presets', JSON.stringify(exportCustomPresets));
+    }
+
+    function applyPresetSelection(value) {
+      if (value.startsWith('custom:')) {
+        const preset = exportCustomPresets.find(item => `custom:${item.id}` === value);
+        if (!preset) throw new Error('Custom preset no longer exists.');
+        applyExportSettings(preset.settings);
+        return;
+      }
+      if (value === 'custom') return;
+      const preset = EXPORT_PRESET_SETTINGS[value];
+      if (!preset) return;
+      applyExportSettings({
+        ...currentExportSettings(),
+        ...preset,
+        automatic_bitrate: true,
+        rate_control: 'vbr',
+        include_audio: true,
+        include_metadata: true,
+        export_range: 'entire_timeline',
+        range_start_seconds: 0,
+        range_end_seconds: selectedTimelineDuration(),
+        hardware_acceleration: 'auto'
+      });
+    }
+
+    function refreshPresetSelection() {
+      if (exportPresetSelect.value !== 'custom' && !exportPresetSelect.value.startsWith('custom:')) {
+        exportPresetSelect.value = 'custom';
+      }
+    }
+
+    async function saveCustomExportPreset(updateExisting) {
+      const selected = exportPresetSelect.value;
+      const existing = selected.startsWith('custom:')
+        ? exportCustomPresets.find(item => `custom:${item.id}` === selected)
+        : null;
+      if (updateExisting && !existing) {
+        alert('اختر Custom Preset محفوظًا لتحديثه.');
+        return;
+      }
+      const name = updateExisting ? existing.name : prompt('Preset name:');
+      if (!name || !name.trim()) return;
+      const preset = {
+        id: existing?.id || (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`),
+        name: name.trim().slice(0, 60),
+        settings: currentExportSettings()
+      };
+      const validation = clientSettingsError(preset.settings);
+      if (validation) {
+        alert(validation);
+        return;
+      }
+      if (existing) {
+        exportCustomPresets = exportCustomPresets.map(item => item.id === existing.id ? preset : item);
+      } else {
+        exportCustomPresets.push(preset);
+      }
+      persistCustomExportPresets();
+      await loadCustomExportPresets();
+      exportPresetSelect.value = `custom:${preset.id}`;
+    }
+
+    function updateLockedCustomHeight() {
+      if (exportResolutionSelect.value !== 'custom' || !exportLockAspect.checked) return;
+      const sourceRatio = getSourceAspectRatio();
+      const ratio = exportAspectRatioSelect.value === 'original'
+        ? sourceRatio
+        : exportAspectRatioSelect.value === 'custom'
+          ? Number(exportWidthInput.value) / Math.max(1, Number(exportHeightInput.value))
+          : exportAspectRatioSelect.value.split(':').map(Number).reduce((a, b) => a / b);
+      const width = Number(exportWidthInput.value);
+      if (Number.isFinite(width) && width > 0 && Number.isFinite(ratio) && ratio > 0) {
+        exportHeightInput.value = String(Math.max(64, Math.round(width / ratio / 2) * 2));
+      }
+    }
+
+    function updatePathAndSave() {
+      isOverwritingAllowed = false;
+      overwriteWarning.classList.add('hidden');
+      updateExportControls();
+      refreshPresetSelection();
+      scheduleProjectAutosave();
+    }
+
+    async function loadExportSettingsFromProject(settings) {
+      if (!settings || typeof settings !== 'object') return;
+      const restored = settings.settings || settings;
+      applyExportSettings(restored);
+      if (settings.file_name) exportFileName.value = settings.file_name;
+      if (settings.type && ['video', 'capcut', 'cuts'].includes(settings.type)) exportTypeSelect.value = settings.type;
+      updateExportControls();
+    }
+
+    exportFileName.addEventListener('input', () => {
+      updatePathAndSave();
+    });
+    exportFormatSelect.addEventListener('change', () => {
+      exportFormatBadge.textContent = `.${exportFormatSelect.value}`;
+      localStorage.setItem('auto_silence_export_format', exportFormatSelect.value);
+      refreshCodecOptions();
+      updatePathAndSave();
+    });
+    exportTypeSelect.addEventListener('change', updatePathAndSave);
+    [
+      exportResolutionSelect, exportWidthInput, exportHeightInput, exportLockAspect,
+      exportFrameRateSelect, exportCustomFpsInput, exportVideoCodecSelect,
+      exportQualitySelect, exportCustomCrfInput, exportAutomaticBitrate,
+      exportRateControlSelect, exportTargetBitrateInput, exportMinBitrateInput,
+      exportMaxBitrateInput, exportEncoderPresetSelect, exportHardwareSelect,
+      exportAspectRatioSelect, exportAspectModeSelect, exportIncludeMetadata,
+      exportIncludeAudio, exportAudioCodecSelect, exportAudioBitrateSelect,
+      exportSampleRateSelect, exportChannelsSelect, exportNormalizeAudio,
+      exportRangeSelect, exportRangeStartInput, exportRangeEndInput
+    ].forEach(element => {
+      element.addEventListener('input', () => {
+        if (element === exportWidthInput) updateLockedCustomHeight();
+        updatePathAndSave();
+      });
+      element.addEventListener('change', () => {
+        if (element === exportFormatSelect) refreshCodecOptions();
+        if (element === exportVideoCodecSelect) refreshCodecOptions();
+        if (element === exportAspectRatioSelect) updateLockedCustomHeight();
+        updatePathAndSave();
+      });
+    });
+
+    exportPresetSelect.addEventListener('change', () => {
+      try {
+        applyPresetSelection(exportPresetSelect.value);
+        updateExportControls();
+        scheduleProjectAutosave();
+      } catch (error) {
+        alert(`تعذر تطبيق Preset: ${error.message || error}`);
+      }
+    });
+    document.getElementById('btnSaveExportPreset').addEventListener('click', () => saveCustomExportPreset(false));
+    document.getElementById('btnEditExportPreset').addEventListener('click', () => saveCustomExportPreset(true));
+    document.getElementById('btnDeleteExportPreset').addEventListener('click', async () => {
+      const selected = exportPresetSelect.value;
+      if (!selected.startsWith('custom:')) return alert('اختر Custom Preset محفوظًا لحذفه.');
+      const id = selected.slice('custom:'.length);
+      const preset = exportCustomPresets.find(item => item.id === id);
+      if (!preset || !confirm(`Delete preset "${preset.name}"?`)) return;
+      exportCustomPresets = exportCustomPresets.filter(item => item.id !== id);
+      persistCustomExportPresets();
+      await loadCustomExportPresets();
+      exportPresetSelect.value = 'custom';
+    });
+    document.getElementById('btnResetExportPreset').addEventListener('click', () => {
+      applyExportSettings({
+        format: 'mp4', resolution: 'match_source', frame_rate: 'match_source',
+        video_codec: 'h264', quality: 'recommended', custom_crf: 23,
+        automatic_bitrate: true, encoder_preset: 'medium', hardware_acceleration: 'auto',
+        audio_codec: 'aac', audio_bitrate_kbps: 192, sample_rate: 'match_source',
+        channels: 'match_source', include_audio: true, normalize_audio: false,
+        aspect_ratio: 'original', aspect_mode: 'fit', include_metadata: true,
+        export_range: 'entire_timeline', range_start_seconds: 0,
+        range_end_seconds: selectedTimelineDuration()
+      });
+      exportPresetSelect.value = 'custom';
+      updatePathAndSave();
+    });
+
+    btnBrowseFolder.addEventListener('click', async () => {
+      try {
+        const response = await fetch('/api/browse_folder', { method: 'POST' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
         if (!data.folder) return;
         exportFolderPath.value = data.folder;
         localStorage.setItem('auto_silence_export_folder', data.folder);
-        isOverwritingAllowed = false;
-        overwriteWarning.classList.add('hidden');
-        updatePathPreview();
+        updatePathAndSave();
       } catch (error) {
         console.error('Folder selection failed:', error);
-        let userPrompt = prompt("تعذر فتح نافذة اختيار المجلد. أدخل مسار المجلد المراد الحفظ فيه:", exportFolderPath.value);
+        const userPrompt = prompt('تعذر فتح نافذة اختيار المجلد. أدخل مسار المجلد المراد الحفظ فيه:', exportFolderPath.value);
         if (userPrompt && userPrompt.trim()) {
           exportFolderPath.value = userPrompt.trim();
           localStorage.setItem('auto_silence_export_folder', userPrompt.trim());
-          isOverwritingAllowed = false;
-          overwriteWarning.classList.add('hidden');
-          updatePathPreview();
+          updatePathAndSave();
         }
       }
     });
 
-    btnOpenFolder.addEventListener('click', async function() {
-      let folder = exportFolderPath.value;
+    btnOpenFolder.addEventListener('click', async () => {
+      const folder = exportFolderPath.value;
       try {
-        let response = await fetch('/api/open_folder', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ folder: folder })
+        const response = await fetch('/api/open_folder', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ folder })
         });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        let result = await response.json();
-        if (result.success === false) throw new Error(result.error || 'تعذر فتح المجلد.');
+        const result = await response.json();
+        if (!response.ok || result.success === false) throw new Error(result.error || `HTTP ${response.status}`);
       } catch (error) {
-        console.error('Opening output folder failed:', error);
         alert(`تعذر فتح المجلد: ${error.message || error}\nالمسار: ${folder}`);
       }
     });
 
-    function openExportModal() {
+    async function openExportModal() {
       if (!mainVideo.src) {
-        alert("يرجى استيراد فيديو أولاً قبل التصدير!");
+        alert('يرجى استيراد فيديو أولاً قبل التصدير!');
         return;
       }
       overwriteWarning.classList.add('hidden');
       isOverwritingAllowed = false;
-      updatePathPreview();
+      exportFolderPath.value = localStorage.getItem('auto_silence_export_folder') || 'D:\\Videos';
+      await loadCustomExportPresets();
+      try {
+        await loadExportCapabilities();
+      } catch (error) {
+        alert(`تعذر قراءة إمكانات FFmpeg: ${error.message || error}`);
+        return;
+      }
+      updateExportControls();
       exportModal.classList.remove('hidden');
     }
-
     btnOpenExport.addEventListener('click', openExportModal);
     btnModalExportAction.addEventListener('click', openExportModal);
-    btnCloseExportModal.addEventListener('click', () => exportModal.classList.add('hidden'));
-    btnCancelExport.addEventListener('click', () => exportModal.classList.add('hidden'));
-
-    btnChangeName.addEventListener('click', function() {
+    btnCloseExportModal.addEventListener('click', () => {
+      if (!exportIsRunning) exportModal.classList.add('hidden');
+    });
+    btnCancelExport.addEventListener('click', async () => {
+      if (exportIsRunning) {
+        try {
+          const response = await fetch('/api/cancel_export', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+          const data = await response.json();
+          if (!response.ok || data.success === false) throw new Error(data.error || `HTTP ${response.status}`);
+          exportStatusText.textContent = 'Cancelling and cleaning temporary files';
+        } catch (error) {
+          alert(`تعذر إلغاء التصدير: ${error.message || error}`);
+        }
+      } else {
+        exportModal.classList.add('hidden');
+      }
+    });
+    btnChangeName.addEventListener('click', () => {
       overwriteWarning.classList.add('hidden');
       isOverwritingAllowed = false;
       exportFileName.focus();
       exportFileName.select();
     });
-
-    btnConfirmOverwrite.addEventListener('click', function() {
+    btnConfirmOverwrite.addEventListener('click', () => {
       isOverwritingAllowed = true;
       overwriteWarning.classList.add('hidden');
-      startExportProcess();
+      startExportProcess({ overwriteConfirmed: true });
     });
+    btnStartExport.addEventListener('click', () => startExportProcess());
 
-    btnStartExport.addEventListener('click', startExportProcess);
-
-    async function startExportProcess() {
-      if (btnStartExport.disabled) return;
-      let { folder, fullFileName, fullPath, cleanName } = updatePathPreview();
-      let overwriteApproved = isOverwritingAllowed;
+    async function startExportProcess(options = {}) {
+      if (exportIsRunning) return;
+      const { folder, fullFileName, fullPath, cleanName } = updatePathPreview();
+      const overwriteApproved = options.overwriteConfirmed === true || isOverwritingAllowed;
       isOverwritingAllowed = false;
-
-      if (!exportFileName.value.trim() || !cleanName) {
-        alert("خطأ: يرجى كتابة اسم للفيديو قبل التصدير.");
+      if (!cleanName || !exportFileName.value.trim() || INVALID_WIN_CHARS.test(exportFileName.value)) {
+        alert('اكتب اسم ملف صالحًا دون رموز Windows المحظورة.');
         exportFileName.focus();
         return;
       }
-
-      if (INVALID_WIN_CHARS.test(exportFileName.value)) {
-        alert("خطأ: اسم الملف يحتوي على رموز ممنوعة في نظام Windows (\\ / : * ? \" < > |)");
-        exportFileName.focus();
-        return;
+      if (!folder) return alert('يرجى اختيار مجلد الحفظ أولاً.');
+      if (exportTypeSelect.value !== 'cuts' && !sourceUploadReady) {
+        return alert('تعذر التصدير لأن المصدر لم يصل إلى محرك التصدير المحلي. أعد استيراد الفيديو.');
       }
+      const keptSegments = segments.filter(segment => !segment.cut && segment.end > segment.start);
+      if (!keptSegments.length) return alert('لا توجد مقاطع محفوظة للتصدير.');
+      const settings = currentExportSettings();
+      const validationError = clientSettingsError(settings);
+      if (validationError) return alert(validationError);
 
-      if (!folder) {
-        alert("يرجى اختيار مجلد الحفظ أولاً.");
-        return;
-      }
-
-      let exportType = exportTypeSelect.value;
-      if (exportType !== 'cuts' && !sourceUploadReady) {
-        alert("تعذر التصدير لأن الملف الحالي لم يصل إلى محرك التصدير المحلي. أعد تشغيل التطبيق المحلي ثم استورد الملف مرة أخرى.");
-        return;
-      }
-
-      let keptSegments = segments.filter(s => !s.cut && s.end > s.start);
-      if (!keptSegments.length) {
-        alert("لا توجد مقاطع محفوظة للتصدير. ألغِ قص جزء واحد على الأقل ثم حاول مجدداً.");
-        return;
-      }
-
+      const exportType = exportTypeSelect.value;
       if (!overwriteApproved) {
-        let pathsToCheck = exportType === 'capcut'
-          ? [`${fullPath}\\rendered_video.mp4`]
+        const pathsToCheck = exportType === 'capcut'
+          ? [fullPath]
           : exportType === 'cuts'
-            ? [`${fullPath}.json`, `${fullPath}.edl`]
+            ? [`${fullPath}.json`, `${fullPath}.edl`, `${fullPath}.csv`]
             : [fullPath];
         try {
-          for (let outputPath of pathsToCheck) {
-            let checkResponse = await fetch('/api/check_file_exists', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+          for (const outputPath of pathsToCheck) {
+            const response = await fetch('/api/check_file_exists', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ path: outputPath })
             });
-            let checkResult = await checkResponse.json();
-            if (!checkResponse.ok || checkResult.success === false) {
-              throw new Error(checkResult.error || `HTTP ${checkResponse.status}`);
-            }
-            if (checkResult.exists) {
+            const result = await response.json();
+            if (!response.ok || result.success === false) throw new Error(result.error || `HTTP ${response.status}`);
+            if (result.exists) {
               overwriteWarning.classList.remove('hidden');
               return;
             }
           }
         } catch (error) {
-          console.error('Output file check failed:', error);
-          alert(`تعذر التحقق من وجود ملف سابق: ${error.message || error}`);
+          alert(`تعذر التحقق من ملفات الإخراج: ${error.message || error}`);
           return;
         }
       }
@@ -3191,122 +3820,157 @@
       if (exportType === 'cuts') {
         btnStartExport.disabled = true;
         try {
-          let response = await fetch('/api/export_cuts', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+          const response = await fetch('/api/export_cuts', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              full_path: fullPath,
-              source_name: originalFileName,
-              segments: keptSegments
+              full_path: fullPath, source_name: originalFileName,
+              segments: keptSegments, settings,
+              overwrite_confirmed: overwriteApproved
             })
           });
-          let result = await response.json();
+          const result = await response.json();
           if (!response.ok || result.success === false) {
+            if (response.status === 409 && !overwriteApproved) {
+              overwriteWarning.classList.remove('hidden');
+              return;
+            }
             throw new Error(result.error || `HTTP ${response.status}`);
           }
-          alert(`تم تصدير ملفات التوقيت بنجاح:\n${result.json_path}\n${result.edl_path}`);
+          alert(`Cut data exported:\n${result.json_path}\n${result.edl_path}\n${result.csv_path}`);
           exportModal.classList.add('hidden');
         } catch (error) {
-          alert(`تعذر تصدير ملفات التوقيت: ${error.message || error}`);
+          alert(`تعذر تصدير بيانات القص: ${error.message || error}`);
         } finally {
           btnStartExport.disabled = false;
         }
         return;
       }
 
+      exportIsRunning = true;
       exportProgressContainer.classList.remove('hidden');
       btnStartExport.disabled = true;
       btnStartExport.classList.add('opacity-50', 'cursor-not-allowed');
-      exportProgressBar.style.width = '5%';
-      exportStatusText.textContent = 'جاري إرسال الطلب للمحرك...';
-      exportPercentText.textContent = '5%';
-
+      exportProgressBar.style.width = '0%';
+      exportPercentText.textContent = '0%';
+      exportStatusText.textContent = 'Preparing Timeline';
       let settled = false;
       let timeoutId = null;
       let pollFailures = 0;
-      function restoreExportButton() {
+      const restoreExportControls = () => {
+        exportIsRunning = false;
+        activeExportPollCancel = null;
         btnStartExport.disabled = false;
         btnStartExport.classList.remove('opacity-50', 'cursor-not-allowed');
-      }
-      function failExport(error) {
+      };
+      const failExport = error => {
         if (settled) return;
         settled = true;
         if (timeoutId) clearTimeout(timeoutId);
-        console.error('Export failed:', error);
-        exportProgressBar.style.width = '0%';
-        exportPercentText.textContent = '0%';
-        exportStatusText.textContent = `❌ فشل التصدير: ${error.message || error}`;
-        restoreExportButton();
+        restoreExportControls();
+        exportStatusText.textContent = `Export failed: ${error.message || error}`;
+        exportStageText.textContent = 'Error';
         alert(`تعذر إكمال التصدير: ${error.message || error}`);
-      }
-      function completeExport(progress) {
+      };
+      const completeExport = progress => {
         if (settled) return;
         settled = true;
         if (timeoutId) clearTimeout(timeoutId);
+        restoreExportControls();
         exportProgressBar.style.width = '100%';
         exportPercentText.textContent = '100%';
-        exportStatusText.textContent = progress.message || '✅ اكتمل التصدير بنجاح!';
-        restoreExportButton();
-        alert(`🎉 تم تصدير الفيديو بنجاح!\nالمسار: ${progress.output_path || fullPath}`);
+        exportStatusText.textContent = progress.message || 'Export completed';
+        alert(`اكتمل التصدير والتحقق من الملف:\n${progress.output_path || fullPath}`);
         exportModal.classList.add('hidden');
-        exportProgressContainer.classList.add('hidden');
-      }
-      async function pollExportProgress() {
+      };
+      const cancelExportUi = progress => {
+        if (settled) return;
+        settled = true;
+        if (timeoutId) clearTimeout(timeoutId);
+        restoreExportControls();
+        exportStatusText.textContent = progress.message || 'Export cancelled';
+        exportStageText.textContent = 'Cancelled';
+      };
+      const pollExportProgress = async () => {
         if (settled) return;
         try {
-          let response = await fetch('/api/export_progress');
-          if (!response.ok) {
-            let message = response.status === 404
-              ? 'محرك التصدير الحالي لا يدعم متابعة التقدم. أغلق التطبيق وأعد تشغيله لتحديث الخادم.'
-              : `HTTP ${response.status}`;
-            throw new Error(message);
-          }
-          let progress = await response.json();
-          let percent = Math.max(0, Math.min(100, Number(progress.progress) || 0));
+          const response = await fetch('/api/export_progress');
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const progress = await response.json();
+          const percent = Math.max(0, Math.min(100, Number(progress.progress) || 0));
           exportProgressBar.style.width = `${percent}%`;
           exportPercentText.textContent = `${percent}%`;
-          exportStatusText.textContent = progress.message || 'جارٍ التصدير...';
+          exportStatusText.textContent = progress.message || 'Processing export';
+          exportStageText.textContent = EXPORT_LABELS[progress.stage] || progress.stage || '-';
+          exportElapsedText.textContent = formatElapsed(progress.elapsed_seconds);
+          exportEtaText.textContent = progress.estimated_remaining_seconds == null
+            ? 'Calculating'
+            : formatElapsed(progress.estimated_remaining_seconds);
+          exportStatsText.textContent = `${progress.fps || '-'} FPS / ${progress.speed || '-'}`;
+          exportOutputSizeText.textContent = progress.output_size_bytes
+            ? formatBytes(Number(progress.output_size_bytes))
+            : 'Available after finalization';
 
           if (progress.status === 'completed') {
             completeExport(progress);
+          } else if (progress.status === 'cancelled') {
+            cancelExportUi(progress);
           } else if (progress.status === 'error') {
-            failExport(new Error(progress.message || 'فشل التصدير.'));
-          } else if (progress.status !== 'exporting') {
+            if (
+              progress.hardware_fallback_available &&
+              !options.hardwareFallback &&
+              exportHardwareSelect.value !== 'software' &&
+              confirm(`Hardware encoding failed:\n${progress.message}\n\nRetry once with Software Encoding?`)
+            ) {
+              settled = true;
+              restoreExportControls();
+              exportHardwareSelect.value = 'software';
+              await startExportProcess({
+                overwriteConfirmed: overwriteApproved,
+                hardwareFallback: true
+              });
+            } else {
+              failExport(new Error(progress.message || 'FFmpeg export failed.'));
+            }
+          } else if (!['exporting', 'cancelling'].includes(progress.status)) {
             failExport(new Error('انتهت متابعة التصدير دون استلام حالة نهائية.'));
           } else {
             pollFailures = 0;
-            timeoutId = setTimeout(pollExportProgress, 700);
+            timeoutId = setTimeout(pollExportProgress, 400);
           }
         } catch (error) {
           pollFailures++;
           if (pollFailures >= 3) {
             failExport(new Error(`تعذر متابعة حالة التصدير: ${error.message || error}`));
           } else {
-            exportStatusText.textContent = `انقطع الاتصال مؤقتاً؛ إعادة المحاولة (${pollFailures}/3)...`;
+            exportStatusText.textContent = `Connection lost; retry ${pollFailures}/3`;
             timeoutId = setTimeout(pollExportProgress, 1000);
           }
         }
-      }
-
+      };
+      activeExportPollCancel = () => {
+        settled = true;
+        if (timeoutId) clearTimeout(timeoutId);
+      };
       try {
-        let resp = await fetch('/api/export_video', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+        const response = await fetch('/api/export_video', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            output_folder: folder,
-            filename: fullFileName,
-            full_path: fullPath,
-            segments: keptSegments,
-            format: exportFormatSelect.value,
-            export_type: exportType,
-            source_name: originalFileName
+            output_folder: folder, filename: fullFileName, full_path: fullPath,
+            segments: keptSegments, format: exportFormatSelect.value,
+            export_type: exportType, source_name: originalFileName,
+            settings, overwrite_confirmed: overwriteApproved
           })
         });
-        let result = await resp.json();
-        if (!resp.ok || result.success === false) {
-          throw new Error(result.error || `HTTP ${resp.status}`);
+        const result = await response.json();
+        if (!response.ok || result.success === false) {
+          if (response.status === 409 && !overwriteApproved) {
+            exportIsRunning = false;
+            btnStartExport.disabled = false;
+            overwriteWarning.classList.remove('hidden');
+            return;
+          }
+          throw new Error(result.error || `HTTP ${response.status}`);
         }
-        exportStatusText.textContent = result.message || 'بدأ التصدير؛ جارٍ متابعة التقدم...';
         pollExportProgress();
       } catch (error) {
         failExport(error);

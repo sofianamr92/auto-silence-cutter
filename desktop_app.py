@@ -20,10 +20,18 @@ import math
 import shutil
 import html
 import uuid
+import time
 from core.editing_engine import FFmpegRenderer
 from core.media_http import parse_byte_range, video_content_type
 from core.media_probe import MediaProbe
 from core.timecode import format_timecode
+from export.capcut_package import CapCutPackageExporter
+from export.export_settings import (
+    ExportSettings,
+    ExportSettingsError,
+    detect_ffmpeg_capabilities,
+    select_segments_for_range,
+)
 
 from cloud.auth import CloudAuthError, SupabaseAuth
 from cloud.config import CloudConfig, CloudConfigurationError
@@ -86,9 +94,16 @@ EXPORT_STATE = {
     "status": "idle",       # idle | exporting | completed | error
     "progress": 0,          # 0 to 100
     "message": "",
-    "output_path": ""
+    "output_path": "",
+    "stage": "idle",
+    "elapsed_seconds": 0,
+    "estimated_remaining_seconds": None,
+    "fps": None,
+    "speed": None,
+    "output_size_bytes": None,
 }
 SOURCE_EXPORT_LOCK = threading.RLock()
+EXPORT_CANCEL_EVENT = None
 
 
 def remove_uploaded_source(path):
@@ -111,8 +126,56 @@ def validate_export_segments(segments):
         end = float(segment["end"])
         if not math.isfinite(start) or not math.isfinite(end) or start < 0 or end <= start:
             raise ValueError("توقيت أحد المقاطع غير صالح.")
-        validated.append({"start": start, "end": end})
+        item = {"start": start, "end": end}
+        clip_id = segment.get("id") or segment.get("clip_id")
+        if isinstance(clip_id, str):
+            item["id"] = clip_id
+        validated.append(item)
     return validated
+
+
+def apply_export_range(segments, settings):
+    return select_segments_for_range(segments, settings)
+
+
+def _commit_text_files(contents, overwrite):
+    temp_paths = []
+    created_paths = []
+    try:
+        for path, text in contents.items():
+            directory = os.path.dirname(os.path.abspath(path))
+            os.makedirs(directory, exist_ok=True)
+            descriptor, temp_path = tempfile.mkstemp(
+                prefix=f".{os.path.basename(path)}.",
+                suffix=".tmp",
+                dir=directory,
+                text=True,
+            )
+            temp_paths.append(temp_path)
+            with os.fdopen(descriptor, "w", encoding="utf-8", newline="") as handle:
+                handle.write(text)
+        if overwrite:
+            for (path, _text), temp_path in zip(contents.items(), temp_paths):
+                os.replace(temp_path, path)
+            return
+        for (path, _text), temp_path in zip(contents.items(), temp_paths):
+            try:
+                os.link(temp_path, path)
+            except FileExistsError as exc:
+                raise FileExistsError(f"يوجد ملف بهذا الاسم بالفعل: {path}") from exc
+            created_paths.append(path)
+            os.remove(temp_path)
+    except Exception:
+        for path in created_paths:
+            try:
+                os.remove(path)
+            except OSError:
+                logger.warning("Could not remove partial export metadata %s", path, exc_info=True)
+        raise
+    finally:
+        for path in temp_paths:
+            if os.path.exists(path):
+                os.remove(path)
 
 
 class CustomHandler(SimpleHTTPRequestHandler):
@@ -254,6 +317,17 @@ class CustomHandler(SimpleHTTPRequestHandler):
                     self._send_json({"success": True, "media": result})
             except (CloudAuthError, CloudRequestError, MediaUploadError, ValueError) as exc:
                 self._send_cloud_error(exc)
+            return
+
+        if request.path == '/api/export_capabilities':
+            try:
+                self._send_json({
+                    "success": True,
+                    "capabilities": detect_ffmpeg_capabilities(),
+                })
+            except RuntimeError as exc:
+                logger.exception("Could not inspect FFmpeg export capabilities")
+                self._send_json({"success": False, "error": str(exc)}, status=503)
             return
 
         # 1. الاستعلام عن نسبة تقدم التصدير
@@ -420,7 +494,7 @@ class CustomHandler(SimpleHTTPRequestHandler):
             self._send_json({"success": False, "error": str(exc)}, status=500)
 
     def do_POST(self):
-        global CURRENT_ACTIVE_VIDEO, UPLOADED_SOURCE_PATH, EXPORT_STATE
+        global CURRENT_ACTIVE_VIDEO, UPLOADED_SOURCE_PATH, EXPORT_STATE, EXPORT_CANCEL_EVENT
         content_length = int(self.headers.get('Content-Length', 0))
         path = urllib.parse.urlparse(self.path).path
         if path.startswith('/api/') and not self._check_local_origin():
@@ -450,6 +524,21 @@ class CustomHandler(SimpleHTTPRequestHandler):
             data = json.loads(body) if body else {}
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             self._send_json({"success": False, "error": f"طلب JSON غير صالح: {exc}"}, status=400)
+            return
+
+        if path == '/api/cancel_export':
+            with SOURCE_EXPORT_LOCK:
+                if EXPORT_STATE.get("status") != "exporting" or EXPORT_CANCEL_EVENT is None:
+                    self._send_json({
+                        "success": False,
+                        "error": "لا توجد عملية تصدير قيد التشغيل لإلغائها.",
+                    }, status=409)
+                    return
+                EXPORT_STATE["status"] = "cancelling"
+                EXPORT_STATE["stage"] = "cancelling"
+                EXPORT_STATE["message"] = "جارٍ إيقاف عملية FFmpeg وتنظيف الملفات المؤقتة..."
+                EXPORT_CANCEL_EVENT.set()
+            self._send_json({"success": True, "message": "تم طلب إلغاء التصدير."}, status=202)
             return
 
         if (
@@ -656,7 +745,11 @@ class CustomHandler(SimpleHTTPRequestHandler):
                 self._send_json({"success": False, "error": "مسار حفظ بيانات القص غير محدد."}, status=400)
                 return
             try:
-                validated_segments = validate_export_segments(data.get('segments'))
+                settings = ExportSettings.from_dict(data.get("settings"))
+                validated_segments = apply_export_range(
+                    validate_export_segments(data.get('segments')),
+                    settings,
+                )
                 with SOURCE_EXPORT_LOCK:
                     source_video = CURRENT_ACTIVE_VIDEO
                     if not source_video or not os.path.isfile(source_video):
@@ -668,37 +761,77 @@ class CustomHandler(SimpleHTTPRequestHandler):
                 if os.path.splitext(base_path)[1].lower() in (".json", ".edl"):
                     base_path = os.path.splitext(base_path)[0]
                 os.makedirs(os.path.dirname(base_path) or ".", exist_ok=True)
-                cuts = {
-                    "source_name": data.get("source_name", ""),
-                    "fps": media_info.fps,
-                    "cuts": validated_segments,
-                }
                 json_path = base_path + ".json"
                 edl_path = base_path + ".edl"
-                with open(json_path, "w", encoding="utf-8") as output_file:
-                    json.dump(cuts, output_file, ensure_ascii=False, indent=2)
+                overwrite = data.get("overwrite_confirmed") is True
+                if not overwrite and (os.path.exists(json_path) or os.path.exists(edl_path)):
+                    self._send_json({
+                        "success": False,
+                        "error": "يوجد ملف JSON أو EDL سابق؛ أكّد الاستبدال أو اختر اسمًا آخر.",
+                    }, status=409)
+                    return
 
-                with open(edl_path, "w", encoding="utf-8") as output_file:
-                    output_file.write("TITLE: AUTO SILENCE CUTTER\nFCM: NON-DROP FRAME\n\n")
-                    timeline_position = 0.0
-                    for index, segment in enumerate(validated_segments, start=1):
-                        duration = segment["end"] - segment["start"]
-                        output_file.write(
+                cuts = []
+                timeline_position = 0.0
+                edl_lines = ["TITLE: AUTO SILENCE CUTTER", "FCM: NON-DROP FRAME", ""]
+                for index, segment in enumerate(validated_segments, start=1):
+                    duration = segment["end"] - segment["start"]
+                    cuts.append({
+                        "order": index,
+                        "clip_id": segment.get("id") or f"clip_{index:03d}",
+                        "source_in": segment["start"],
+                        "source_out": segment["end"],
+                        "timeline_in": timeline_position,
+                        "timeline_out": timeline_position + duration,
+                        "duration": duration,
+                    })
+                    edl_lines.extend([
+                        (
                             f"{index:03d}  AX       V     C        "
                             f"{format_timecode(segment['start'], media_info.fps)} "
                             f"{format_timecode(segment['end'], media_info.fps)} "
                             f"{format_timecode(timeline_position, media_info.fps)} "
-                            f"{format_timecode(timeline_position + duration, media_info.fps)}\n"
-                        )
-                        output_file.write(f"* SOURCE: {data.get('source_name', '')}\n\n")
-                        timeline_position += duration
+                            f"{format_timecode(timeline_position + duration, media_info.fps)}"
+                        ),
+                        f"* SOURCE: {data.get('source_name', '')}",
+                        "",
+                    ])
+                    timeline_position += duration
+                csv_lines = [["Order", "Clip ID", "Source In (s)", "Source Out (s)", "Timeline In (s)", "Timeline Out (s)", "Duration (s)"]]
+                csv_lines.extend([
+                    [
+                        item["order"], item["clip_id"], item["source_in"],
+                        item["source_out"], item["timeline_in"], item["timeline_out"],
+                        item["duration"],
+                    ]
+                    for item in cuts
+                ])
+                import io
+                csv_buffer = io.StringIO(newline="")
+                csv.writer(csv_buffer).writerows(csv_lines)
+                json_path = base_path + ".json"
+                edl_path = base_path + ".edl"
+                csv_path = base_path + ".csv"
+                _commit_text_files({
+                    json_path: json.dumps({
+                        "source_name": data.get("source_name", ""),
+                        "fps": media_info.fps,
+                        "duration_seconds": timeline_position,
+                        "cuts": cuts,
+                    }, ensure_ascii=False, indent=2),
+                    edl_path: "\n".join(["TITLE: AUTO SILENCE CUTTER", "FCM: NON-DROP FRAME", ""])
+                    + "\n".join(edl_lines[3:]),
+                    csv_path: csv_buffer.getvalue(),
+                }, overwrite)
                 self._send_json({
                     "success": True,
                     "json_path": json_path,
                     "edl_path": edl_path,
+                    "csv_path": csv_path,
                 })
             except (KeyError, TypeError, ValueError, OSError) as exc:
-                self._send_json({"success": False, "error": str(exc)}, status=400)
+                status = 409 if isinstance(exc, FileExistsError) else 400
+                self._send_json({"success": False, "error": str(exc)}, status=status)
 
         # بدء عملية التصدير في Background Worker
         elif path == '/api/export_video':
@@ -710,20 +843,42 @@ class CustomHandler(SimpleHTTPRequestHandler):
                 self._send_json({"success": False, "error": "مسار الحفظ غير محدد."}, status=400)
                 return
 
-            validated_segments = []
             try:
-                validated_segments = validate_export_segments(segments)
-            except (KeyError, TypeError, ValueError) as exc:
+                settings_payload = data.get("settings")
+                if settings_payload is None and data.get("format"):
+                    settings_payload = {"format": data["format"]}
+                settings = ExportSettings.from_dict(settings_payload)
+                if data.get("format") and data["format"] != settings.format:
+                    raise ValueError("صيغة الطلب لا تطابق صيغة إعدادات التصدير.")
+                validated_segments = apply_export_range(
+                    validate_export_segments(segments),
+                    settings,
+                )
+            except (KeyError, TypeError, ValueError, ExportSettingsError) as exc:
                 self._send_json({"success": False, "error": str(exc)}, status=400)
                 return
 
             package_dir = None
             if export_type == "capcut":
                 package_dir = os.path.abspath(full_path)
-                full_path = os.path.join(package_dir, "rendered_video.mp4")
+                full_path = os.path.join(package_dir, f"rendered_video.{settings.format}")
+            elif export_type != "video":
+                self._send_json({"success": False, "error": "نوع تصدير الفيديو غير مدعوم."}, status=400)
+                return
+            else:
+                full_path = os.path.abspath(full_path)
+
+            overwrite = data.get("overwrite_confirmed") is True
+            target_exists = os.path.exists(package_dir or full_path)
+            if target_exists and not overwrite:
+                self._send_json({
+                    "success": False,
+                    "error": "يوجد ملف أو مجلد سابق؛ أكّد الاستبدال أو اختر اسمًا آخر.",
+                }, status=409)
+                return
 
             with SOURCE_EXPORT_LOCK:
-                if EXPORT_STATE["status"] == "exporting":
+                if EXPORT_STATE["status"] in ("exporting", "cancelling"):
                     self._send_json({"success": False, "error": "هناك عملية تصدير قيد التشغيل بالفعل."}, status=409)
                     return
                 source_video = CURRENT_ACTIVE_VIDEO
@@ -731,17 +886,33 @@ class CustomHandler(SimpleHTTPRequestHandler):
                     self._send_json({"success": False, "error": "تعذر العثور على الفيديو الأصلي."}, status=400)
                     return
 
+                EXPORT_CANCEL_EVENT = threading.Event()
                 EXPORT_STATE = {
                     "status": "exporting",
-                    "progress": 10,
-                    "message": "جاري تجهيز مقاطع الكلام والحزمة..." if package_dir else "جاري تجهيز مقاطع الكلام...",
-                    "output_path": full_path
+                    "progress": 0,
+                    "message": "Preparing Timeline",
+                    "output_path": full_path,
+                    "stage": "preparing",
+                    "elapsed_seconds": 0,
+                    "estimated_remaining_seconds": None,
+                    "fps": None,
+                    "speed": None,
+                    "output_size_bytes": None,
                 }
 
                 try:
                     threading.Thread(
                         target=worker_ffmpeg_export,
-                        args=(source_video, validated_segments, full_path, package_dir, data.get("source_name", "")),
+                        args=(
+                            source_video,
+                            validated_segments,
+                            full_path,
+                            package_dir,
+                            data.get("source_name", ""),
+                            settings,
+                            overwrite,
+                            EXPORT_CANCEL_EVENT,
+                        ),
                         daemon=True
                     ).start()
                 except RuntimeError as exc:
@@ -749,8 +920,10 @@ class CustomHandler(SimpleHTTPRequestHandler):
                         "status": "error",
                         "progress": 0,
                         "message": f"تعذر بدء التصدير: {exc}",
-                        "output_path": full_path
+                        "output_path": full_path,
+                        "stage": "error",
                     }
+                    EXPORT_CANCEL_EVENT = None
                     self._send_json({"success": False, "error": EXPORT_STATE["message"]}, status=500)
                     return
 
@@ -803,149 +976,134 @@ class CustomHandler(SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
 
-def worker_ffmpeg_export(input_file, kept_segments, output_file, package_dir=None, source_name=""):
-    """قص ودمج المقاطع بسرعة مع تحديث نسبة التقدم"""
-    global EXPORT_STATE
-    temp_dir = None
-    temp_output = None
+def worker_ffmpeg_export(
+    input_file,
+    kept_segments,
+    output_file,
+    package_dir=None,
+    source_name="",
+    settings=None,
+    overwrite=False,
+    cancel_event=None,
+):
+    """Render the immutable request snapshot and publish only verified output."""
+    global EXPORT_STATE, EXPORT_CANCEL_EVENT
+    output_file = os.path.abspath(output_file)
+    started_at = time.monotonic()
+    settings = settings or ExportSettings()
+
+    def publish_progress(progress):
+        elapsed = max(0, time.monotonic() - started_at)
+        percent = max(0, min(99, int(progress.get("percent") or 0)))
+        remaining = elapsed * (100 - percent) / percent if percent > 0 else None
+        stage = progress.get("stage", "encoding")
+        messages = {
+            "processing_clips": "Processing video clips",
+            "encoding": "Encoding video and audio",
+            "finalizing": "Finalizing and validating file",
+        }
+        with SOURCE_EXPORT_LOCK:
+            if EXPORT_STATE.get("status") not in ("exporting", "cancelling"):
+                return
+            EXPORT_STATE.update({
+                "progress": percent,
+                "stage": stage,
+                "message": messages.get(stage, "Processing export"),
+                "elapsed_seconds": round(elapsed, 1),
+                "estimated_remaining_seconds": (
+                    round(remaining, 1) if remaining is not None else None
+                ),
+                "fps": progress.get("fps"),
+                "speed": progress.get("speed"),
+                "output_size_bytes": progress.get("output_size_bytes"),
+            })
+
     try:
-        output_file = os.path.abspath(output_file)
-        output_dir = os.path.dirname(output_file)
-        os.makedirs(output_dir, exist_ok=True)
-        total_segs = len(kept_segments)
-        if total_segs == 0:
+        if not os.path.isfile(input_file):
+            raise FileNotFoundError("ملف الفيديو الأصلي غير موجود.")
+        if not kept_segments:
             raise ValueError("لا توجد مقاطع للتصدير.")
+        if cancel_event is not None and cancel_event.is_set():
+            raise RuntimeError("تم إلغاء التصدير.")
 
-        ffmpeg_path = shutil.which("ffmpeg")
-        if not ffmpeg_path:
-            raise FileNotFoundError("لم يتم العثور على FFmpeg في PATH.")
+        with SOURCE_EXPORT_LOCK:
+            EXPORT_STATE.update({
+                "stage": "processing_video",
+                "message": "Preparing Timeline",
+            })
 
-        temp_dir = tempfile.mkdtemp(prefix="_temp_cut_cache_", dir=output_dir)
-        output_extension = os.path.splitext(output_file)[1] or ".mp4"
-        descriptor, temp_output = tempfile.mkstemp(
-            prefix=f".{os.path.basename(output_file)}.",
-            suffix=output_extension,
-            dir=output_dir
-        )
-        os.close(descriptor)
-
-        EXPORT_STATE["progress"] = 20
-        EXPORT_STATE["message"] = "جاري قص المقاطع عبر FFmpeg..."
-
-        part_files = []
-        for i, s in enumerate(kept_segments):
-            st = float(s["start"])
-            en = float(s["end"])
-            dur = en - st
-            if not math.isfinite(st) or not math.isfinite(en) or st < 0 or dur <= 0:
-                raise ValueError(f"توقيت المقطع {i + 1} غير صالح.")
-
-            part_path = os.path.join(temp_dir, f"part_{i:04d}.mp4")
+        if package_dir:
+            success, message = CapCutPackageExporter.export_segments(
+                input_file,
+                kept_segments,
+                package_dir,
+                settings,
+                source_name=source_name,
+                progress_callback=publish_progress,
+                cancel_event=cancel_event,
+                overwrite=overwrite,
+            )
+        else:
             success, message = FFmpegRenderer.render_segments(
                 input_file,
-                [(st, en)],
-                part_path,
-                resolution="الدقة الأصلية الكاملة",
-                fast_copy=False,
+                [(float(item["start"]), float(item["end"])) for item in kept_segments],
+                output_file,
+                settings=settings,
+                progress_callback=publish_progress,
+                cancel_event=cancel_event,
+                overwrite=overwrite,
             )
-            if not success or not os.path.isfile(part_path) or os.path.getsize(part_path) == 0:
-                raise RuntimeError(f"تعذر قص المقطع {i + 1}: {message}")
-            part_files.append(part_path)
+        if not success:
+            if cancel_event is not None and cancel_event.is_set():
+                raise RuntimeError("تم إلغاء التصدير.")
+            raise RuntimeError(message)
 
-            progress_val = 20 + int(((i + 1) / total_segs) * 55)
-            EXPORT_STATE["progress"] = progress_val
-            EXPORT_STATE["message"] = f"جاري قص المقطع {i+1} من {total_segs}..."
-
-        EXPORT_STATE["progress"] = 80
-        EXPORT_STATE["message"] = "جاري دمج المقاطع في ملف واحد..."
-
-        list_txt_path = os.path.join(temp_dir, "concat_list.txt")
-        with open(list_txt_path, "w", encoding="utf-8") as f:
-            for part_file in part_files:
-                clean_p = part_file.replace('\\', '/').replace("'", "'\\''")
-                f.write(f"file '{clean_p}'\n")
-
-        merge_cmd = [
-            ffmpeg_path, "-y", "-f", "concat", "-safe", "0",
-            "-i", list_txt_path, "-c", "copy", temp_output
-        ]
-        result = subprocess.run(
-            merge_cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            errors="replace"
-        )
-        if result.returncode != 0 or not os.path.isfile(temp_output) or os.path.getsize(temp_output) == 0:
-            message = (result.stderr or "").strip()[-2000:] or "لم ينتج FFmpeg ملف الفيديو النهائي."
-            raise RuntimeError(f"تعذر دمج المقاطع: {message}")
-
-        os.replace(temp_output, output_file)
-        temp_output = None
         if package_dir:
-            clips_dir = os.path.join(package_dir, "clips")
-            metadata_dir = os.path.join(package_dir, "metadata")
-            os.makedirs(clips_dir, exist_ok=True)
-            os.makedirs(metadata_dir, exist_ok=True)
-            for index, part_file in enumerate(part_files, start=1):
-                shutil.copy2(part_file, os.path.join(clips_dir, f"clip_{index:03d}.mp4"))
-                EXPORT_STATE["progress"] = 80 + int((index / total_segs) * 15)
-                EXPORT_STATE["message"] = f"جاري تجهيز مقاطع الحزمة ({index}/{total_segs})..."
+            output_file = os.path.join(package_dir, f"rendered_video.{settings.format}")
+        if not os.path.isfile(output_file) or os.path.getsize(output_file) <= 0:
+            raise RuntimeError("لم يتم العثور على ملف التصدير النهائي بعد التحقق.")
 
-            with open(os.path.join(metadata_dir, "cuts.json"), "w", encoding="utf-8") as metadata_file:
-                json.dump({
-                    "source_name": source_name or os.path.basename(input_file),
-                    "cuts": kept_segments,
-                }, metadata_file, ensure_ascii=False, indent=2)
-            with open(
-                os.path.join(metadata_dir, "cuts.csv"),
-                "w",
-                newline="",
-                encoding="utf-8-sig",
-            ) as metadata_file:
-                writer = csv.writer(metadata_file)
-                writer.writerow(["Clip", "Source In (s)", "Source Out (s)", "Duration (s)"])
-                for index, segment in enumerate(kept_segments, start=1):
-                    writer.writerow([
-                        index,
-                        segment["start"],
-                        segment["end"],
-                        segment["end"] - segment["start"],
-                    ])
-            with open(os.path.join(package_dir, "README_AR.txt"), "w", encoding="utf-8") as readme:
-                readme.write(
-                    "حزمة Auto Silence Cutter: الفيديو النهائي داخل rendered_video.mp4، "
-                    "والمقاطع المنفردة داخل clips، والتوقيتات داخل metadata.\n"
-                )
-
+        elapsed = max(0, time.monotonic() - started_at)
         with SOURCE_EXPORT_LOCK:
             EXPORT_STATE = {
                 "status": "completed",
                 "progress": 100,
-                "message": "تم تصدير الفيديو بنجاح!",
-                "output_path": output_file
+                "message": message,
+                "output_path": output_file,
+                "stage": "completed",
+                "elapsed_seconds": round(elapsed, 1),
+                "estimated_remaining_seconds": 0,
+                "fps": EXPORT_STATE.get("fps"),
+                "speed": EXPORT_STATE.get("speed"),
+                "output_size_bytes": os.path.getsize(output_file),
             }
     except Exception as exc:
-        logger.exception("Video export failed")
+        if cancel_event is not None and cancel_event.is_set():
+            status = "cancelled"
+            message = "تم إلغاء التصدير وتنظيف الملفات المؤقتة."
+            stage = "cancelled"
+        else:
+            logger.exception("Video export failed")
+            status = "error"
+            message = str(exc)
+            stage = "error"
         with SOURCE_EXPORT_LOCK:
             EXPORT_STATE = {
-                "status": "error",
-                "progress": 0,
-                "message": str(exc),
-                "output_path": output_file
+                "status": status,
+                "progress": EXPORT_STATE.get("progress", 0),
+                "message": message,
+                "output_path": output_file,
+                "stage": stage,
+                "elapsed_seconds": round(max(0, time.monotonic() - started_at), 1),
+                "estimated_remaining_seconds": None,
+                "fps": EXPORT_STATE.get("fps"),
+                "speed": EXPORT_STATE.get("speed"),
+                "output_size_bytes": None,
             }
     finally:
-        if temp_dir and os.path.isdir(temp_dir):
-            try:
-                shutil.rmtree(temp_dir)
-            except OSError:
-                logger.warning("Could not remove temporary export directory %s", temp_dir, exc_info=True)
-        if temp_output and os.path.exists(temp_output):
-            try:
-                os.remove(temp_output)
-            except OSError:
-                logger.warning("Could not remove temporary export file %s", temp_output, exc_info=True)
+        with SOURCE_EXPORT_LOCK:
+            if EXPORT_CANCEL_EVENT is cancel_event:
+                EXPORT_CANCEL_EVENT = None
 
 
 def run_server():
